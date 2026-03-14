@@ -82,6 +82,12 @@
 </head>
 <body class="pb-32">
 
+    <!-- Global Loading Overlay -->
+    <div id="global-loader" class="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center transition-opacity duration-500">
+        <div class="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+        <p class="text-indigo-600 font-bold text-sm tracking-widest uppercase">Connecting to Supabase...</p>
+    </div>
+
     <!-- Login View / Landing Screen -->
     <div id="login-view" class="fixed inset-0 z-50 bg-white overflow-y-auto hide-scroll flex flex-col items-center pt-12 px-6 pb-24">
         
@@ -94,10 +100,10 @@
         
         <!-- Login Actions -->
         <div id="role-selection" class="w-full space-y-4 max-w-sm z-10 relative transition-all duration-300">
-            <button onclick="showLogin('resident')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm">
+            <button onclick="window.showLogin('resident')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm">
                 Resident Portal
             </button>
-            <button onclick="showLogin('admin')" class="w-full py-4 bg-white text-indigo-600 border border-gray-100 rounded-2xl font-bold active:scale-95 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-sm">
+            <button onclick="window.showLogin('admin')" class="w-full py-4 bg-white text-indigo-600 border border-gray-100 rounded-2xl font-bold active:scale-95 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-sm">
                 Estate Admin
             </button>
         </div>
@@ -116,7 +122,7 @@
                 </div>
             </div>
             <button id="login-submit-btn" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm mb-4">Sign In</button>
-            <button onclick="hideLogin()" class="w-full py-2 text-gray-400 text-xs font-bold hover:text-gray-800 transition-colors">← Back to Roles</button>
+            <button onclick="window.hideLogin()" class="w-full py-2 text-gray-400 text-xs font-bold hover:text-gray-800 transition-colors">← Back to Roles</button>
         </div>
 
         <!-- Psychological Strategies Section -->
@@ -205,7 +211,7 @@
                 <h2 class="text-xl font-bold" id="user-name">Alex Johnson</h2>
             </div>
             <!-- Clickable Profile Avatar -->
-            <div class="relative cursor-pointer group" onclick="switchTab('profile')">
+            <div class="relative cursor-pointer group" onclick="window.switchTab('profile')">
                 <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-transparent group-hover:border-indigo-600 transition-all shadow-sm">
                     <img id="user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alex" alt="Avatar">
                 </div>
@@ -229,7 +235,7 @@
 
     <!-- General Modal Container -->
     <div id="modal-container" class="fixed inset-0 z-[100] hidden flex items-end justify-center">
-        <div class="modal-overlay absolute inset-0" onclick="closeModal()"></div>
+        <div class="modal-overlay absolute inset-0" onclick="window.closeModal()"></div>
         <div class="bg-white w-full max-w-md rounded-t-[2.5rem] p-8 relative z-10 max-h-[85vh] overflow-y-auto shadow-2xl hide-scroll">
             <div id="modal-content"></div>
         </div>
@@ -240,146 +246,191 @@
         Action Successful
     </div>
 
-    <script>
-        // MVP In-Memory State
+    <!-- Application Logic (Supabase JS Client integration) -->
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+        // =================================================================================
+        // SUPABASE CONFIGURATION
+        // REPLACE THESE WITH YOUR ACTUAL SUPABASE URL AND ANON KEY
+        // =================================================================================
+        const SUPABASE_URL = 'https://wzjcdfyfkjkbblofohrr.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6amNkZnlma2prYmJsb2ZvaHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MDEzODYsImV4cCI6MjA4OTA3NzM4Nn0.NItjbAPOcqELxTX4tuRlpUtWohs7CTDHGr-IhoeDyTo';
+
+        let supabase = null;
+
+        // Global Production App State
         const state = {
             userType: 'resident',
-            totalBalance: 4250500,
+            totalBalance: 0,
             activeTab: 'dashboard',
             financeType: 'expense',
             financeFilters: { period: 'monthly', category: 'all', sortBy: 'date-desc' },
             personalFilter: 'all', 
             votingType: 'polls',
-            recentContributions: [
-                { id: 1, residentId: 1, name: 'Resident 042', date: '2026-03-12', amount: 25000, category: 'Dues', status: 'completed' },
-                { id: 2, residentId: 2, name: 'Resident 105', date: '2026-03-11', amount: 15000, category: 'Security', status: 'completed' },
-                { id: 3, residentId: 3, name: 'Resident 018', date: '2026-03-10', amount: 25000, category: 'Dues', status: 'pending' },
-            ],
-            incomes: [
-                { id: 1, residentId: 1, title: 'Resident 042', category: 'Estate Dues', amount: 25000, date: '2026-03-12', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' },
-                { id: 2, residentId: 0, title: 'Anonymous Donor', category: 'Donation', amount: 500000, date: '2026-03-10', icon: 'heart', color: 'bg-rose-500', from: 'Anonymous' },
-                { id: 3, residentId: 2, title: 'Resident 105', category: 'Project Fee', amount: 15000, date: '2026-03-05', icon: 'briefcase', color: 'bg-emerald-500', from: 'Resident 105' },
-                { id: 4, residentId: 4, title: 'Resident 088', category: 'Estate Dues', amount: 25000, date: '2026-02-28', icon: 'home', color: 'bg-indigo-500', from: 'Resident 088' }
-            ],
-            expenses: [
-                { id: 1, title: 'Security Patrol', category: 'Security', amount: 850000, date: '2026-03-01', icon: 'shield', color: 'bg-indigo-500', vendorId: 1, approver: 'System Manager' },
-                { id: 2, title: 'Landscaping', category: 'Maintenance', amount: 120000, date: '2026-03-05', icon: 'leaf', color: 'bg-emerald-500', vendorId: 2, approver: 'Sarah Smith' },
-                { id: 3, title: 'Street Light Repair', category: 'Utility', amount: 85000, date: '2026-03-07', icon: 'zap', color: 'bg-amber-500', vendorId: 3, approver: 'Alex Johnson' },
-                { id: 4, title: 'Waste Disposal', category: 'Sanitation', amount: 45000, date: '2026-02-28', icon: 'trash', color: 'bg-rose-500', vendorId: 4, approver: 'System Manager' },
-                { id: 5, title: 'Generator Diesel', category: 'Utility', amount: 210000, date: '2026-03-14', icon: 'battery', color: 'bg-amber-600', vendorId: 3, approver: 'Alex Johnson' },
-                { id: 6, title: 'Plumbing Works', category: 'Maintenance', amount: 15000, date: '2025-12-15', icon: 'droplet', color: 'bg-blue-500', vendorId: 5, approver: 'System Manager' }
-            ],
-            vendors: [
-                { id: 1, name: 'SafeGuard Security', service: 'SECURITY', subCategory: 'Guards & Patrol', rating: 4.8, contact: '080-SECURE', email: 'hello@safeguard.ng', address: '12 Security Way, Lagos', transactions: [
-                    { date: '2026-03-01', amount: 850000, desc: 'Monthly Security Patrol' },
-                    { date: '2026-02-01', amount: 850000, desc: 'Monthly Security Patrol' }
-                ]},
-                { id: 2, name: 'GreenLeaves Ltd', service: 'MAINTENANCE', subCategory: 'Landscaping', rating: 4.5, contact: '081-GARDENS', email: 'info@greenleaves.ng', address: '45 Garden Lane, Abuja', transactions: [
-                    { date: '2026-03-05', amount: 120000, desc: 'Gardening & Lawns' }
-                ]},
-                { id: 3, name: 'PowerFix Inc', service: 'UTILITY', subCategory: 'Electrical', rating: 4.2, contact: '090-POWER', email: 'power@fixinc.ng', address: '1 Energy Crescent, PH', transactions: [
-                    { date: '2026-03-14', amount: 210000, desc: 'Generator Diesel Supply' },
-                    { date: '2026-03-07', amount: 85000, desc: 'Street Light Repair' }
-                ]},
-                { id: 4, name: 'ClearWaste Inc', service: 'SANITATION', subCategory: 'Waste Disposal', rating: 4.6, contact: '080-WASTE', email: 'clear@waste.ng', address: 'Plot 4 Dump Site Road', transactions: [] },
-                { id: 5, name: 'QuickFix Plumbers', service: 'MAINTENANCE', subCategory: 'Plumbing', rating: 4.1, contact: '090-PLUMB', email: 'quick@plumb.ng', address: '22 Water Drive, Lagos', transactions: [] }
-            ],
-            residents: [
-                { id: 1, name: 'Alex Johnson', house: '4', flat: 'A2', street: 'Freedom Way', phone: '08012345678', email: 'alex.j@example.com', status: 'Active', paymentStatus: 'Paid' },
-                { id: 2, name: 'Sarah Smith', house: '12', flat: 'B1', street: 'Liberty Avenue', phone: '08123456789', email: 'sarah.s@example.com', status: 'Active', paymentStatus: 'Due' },
-                { id: 3, name: 'Mike Ross', house: '8', flat: 'Ground Floor', street: 'Peace Close', phone: '09011122233', email: 'mike.r@example.com', status: 'Active', paymentStatus: 'Pending' }
-            ],
-            polls: [
-                { id: 1, title: 'New Gym Equipment', description: 'Procuring 2 treadmills and a full dumbbell set for the estate clubhouse.', totalResidents: 300, agree: 142, disagree: 40, ends: '2026-03-25T18:00', status: 'active', voted: false },
-                { id: 2, title: 'Christmas Party Budget', description: 'Allocating ₦5M for the end of year kids party and adult gala.', totalResidents: 300, agree: 210, disagree: 15, ends: '2025-12-10T12:00', status: 'closed', voted: true },
-                { id: 3, title: 'Biometric Gate Access', description: 'Replacing the card system with fingerprint and facial recognition scanners.', totalResidents: 300, agree: 89, disagree: 120, ends: '2026-03-18T10:00', status: 'active', voted: false },
-                { id: 4, title: 'Increase Security Levy', description: 'Increasing monthly security dues by ₦5,000 to hire 4 additional armed guards.', totalResidents: 300, agree: 45, disagree: 180, ends: '2026-04-01T23:59', status: 'active', voted: false }
-            ],
-            campaigns: [
-                { id: 1, title: 'Solar Street Lights Installation', description: 'Installing 50 units of 100W standalone solar street lights across all avenues.', targetAmount: 5000000, raisedAmount: 1200000, ends: '2026-04-15', status: 'active', contributors: 45 },
-                { id: 2, title: 'Estate Gatehouse Renovation', description: 'Full plastering, painting, and air conditioning for the main security post.', targetAmount: 2000000, raisedAmount: 1950000, ends: '2026-03-30', status: 'active', contributors: 112 },
-                { id: 3, title: 'CCTV Camera Upgrade', description: 'Upgrading the 14 perimeter cameras to 4K resolution with night vision.', targetAmount: 3500000, raisedAmount: 3500000, ends: '2026-01-20', status: 'completed', contributors: 205 }
-            ]
+            incomes: [],
+            expenses: [],
+            vendors: [],
+            residents: [],
+            polls: [],
+            campaigns: []
         };
 
+        const baseBalance = 2450000; // Starting historical balance before tracking 
+
+        // --- Supabase Initialization ---
+        async function initSupabase() {
+            try {
+                supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                
+                // Fetch existing data
+                await fetchInitialData();
+                // Setup realtime sync
+                setupRealtimeListeners();
+                
+                hideLoader();
+            } catch (err) {
+                console.error("Supabase Initialization Error:", err);
+                window.showToast("Failed to connect to database");
+                hideLoader();
+            }
+        }
+
+        function hideLoader() {
+            const loader = document.getElementById('global-loader');
+            if(loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.style.display = 'none', 500);
+            }
+        }
+
+        async function fetchInitialData() {
+            const fetchTable = async (table, stateKey) => {
+                const { data, error } = await supabase.from(table).select('*').order(table === 'duesily_vendors' || table === 'duesily_residents' ? 'id' : 'date', { ascending: false });
+                if(!error && data) state[stateKey] = data;
+            };
+
+            await Promise.all([
+                fetchTable('duesily_incomes', 'incomes'),
+                fetchTable('duesily_expenses', 'expenses'),
+                fetchTable('duesily_vendors', 'vendors'),
+                fetchTable('duesily_residents', 'residents'),
+                fetchTable('duesily_polls', 'polls'),
+                fetchTable('duesily_campaigns', 'campaigns')
+            ]);
+            updateGlobalState();
+        }
+
+        // --- Real-time Cloud Listeners (Supabase Channels) ---
+        function setupRealtimeListeners() {
+            const handlePayload = (payload, stateKey) => {
+                if (payload.eventType === 'INSERT') {
+                    state[stateKey].unshift(payload.new);
+                } else if (payload.eventType === 'UPDATE') {
+                    const idx = state[stateKey].findIndex(i => i.id === payload.new.id);
+                    if(idx > -1) state[stateKey][idx] = payload.new;
+                } else if (payload.eventType === 'DELETE') {
+                    state[stateKey] = state[stateKey].filter(i => i.id !== payload.old.id);
+                }
+                updateGlobalState();
+            };
+
+            const channel = supabase.channel('schema-db-changes');
+            
+            ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns'].forEach(table => {
+                const stateKey = table.replace('duesily_', '');
+                channel.on('postgres_changes', { event: '*', schema: 'public', table: table }, payload => handlePayload(payload, stateKey));
+            });
+
+            channel.subscribe();
+        }
+
+        function updateGlobalState() {
+            const totalIncomes = state.incomes.reduce((acc, curr) => acc + Number(curr.amount), 0);
+            const totalExpenses = state.expenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+            state.totalBalance = baseBalance + totalIncomes - totalExpenses;
+            
+            if(document.getElementById('app-container').classList.contains('hidden') === false) {
+                window.switchTab(state.activeTab);
+            }
+        }
+
+        // --- Helper Function to generate UUIDs for client inserts ---
+        function generateId() {
+            return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+        }
+
+        // --- UI Formatters & Helpers ---
         const formatCurrency = (val) => '₦' + Number(val).toLocaleString();
         const formatDate = (dateStr) => {
+            if(!dateStr) return '';
             const date = new Date(dateStr);
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         };
         const formatDateTime = (dateStr) => {
+            if(!dateStr) return '';
             const date = new Date(dateStr);
             return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         };
 
-        function showToast(msg) {
+        window.showToast = function(msg) {
             const toast = document.getElementById('toast');
             toast.innerText = msg;
             toast.classList.replace('opacity-0', 'opacity-100');
             setTimeout(() => toast.classList.replace('opacity-100', 'opacity-0'), 2500);
-        }
+        };
 
         // --- Authentication Flow ---
-        let currentLoginType = '';
-
-        function showLogin(type) {
-            currentLoginType = type;
+        window.showLogin = function(type) {
             document.getElementById('login-form-title').innerText = type === 'admin' ? 'Admin Secure Login' : 'Resident Portal Login';
             document.getElementById('role-selection').classList.add('hidden');
             
             const formContainer = document.getElementById('login-form-container');
             formContainer.classList.remove('hidden');
-            setTimeout(() => {
-                formContainer.classList.remove('opacity-0', 'translate-y-4');
-            }, 10);
-            
-            document.getElementById('login-submit-btn').onclick = () => performLogin(type);
-        }
+            setTimeout(() => formContainer.classList.remove('opacity-0', 'translate-y-4'), 10);
+            document.getElementById('login-submit-btn').onclick = () => window.performLogin(type);
+        };
 
-        function hideLogin() {
+        window.hideLogin = function() {
             const formContainer = document.getElementById('login-form-container');
             formContainer.classList.add('opacity-0', 'translate-y-4');
             setTimeout(() => {
                 formContainer.classList.add('hidden');
                 document.getElementById('role-selection').classList.remove('hidden');
             }, 300);
-        }
+        };
 
-        function performLogin(type) {
+        window.performLogin = function(type) {
             const email = document.getElementById('login-email').value;
             const pass = document.getElementById('login-pass').value;
-            if(!email || !pass) {
-                showToast("Please enter credentials");
-                return;
-            }
-            showToast("Authenticating securely...");
-            setTimeout(() => {
-                login(type); 
-            }, 800);
-        }
+            if(!email || !pass) return window.showToast("Please enter credentials");
+            
+            window.showToast("Authenticating securely...");
+            setTimeout(() => window.login(type), 800);
+        };
 
-        function logout() {
-            showToast("Logging out securely...");
+        window.logout = function() {
+            window.showToast("Logging out securely...");
             setTimeout(() => {
                 document.getElementById('app-container').classList.add('hidden');
                 document.getElementById('login-view').classList.remove('hidden');
-                hideLogin();
+                window.hideLogin();
                 window.scrollTo(0,0);
                 if(window.nigeriaMap) window.nigeriaMap.invalidateSize();
             }, 800);
-        }
+        };
 
-        function login(type) {
+        window.login = function(type) {
             state.userType = type;
             document.getElementById('user-name').innerText = type === 'admin' ? 'System Manager' : 'Alex Johnson';
             document.getElementById('user-avatar').src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${type === 'admin' ? 'Manager' : 'Alex'}`;
             document.getElementById('login-view').classList.add('hidden');
             document.getElementById('app-container').classList.remove('hidden');
-            renderNav();
-            switchTab('dashboard');
-        }
+            window.renderNav();
+            window.switchTab('dashboard');
+        };
 
-        function renderNav() {
+        window.renderNav = function() {
             const nav = document.getElementById('bottom-nav');
             const tabs = [
                 { id: 'dashboard', icon: 'layout-grid', label: 'Home' },
@@ -390,7 +441,7 @@
             if (state.userType === 'admin') tabs.push({ id: 'manage', icon: 'settings', label: 'Manage' });
 
             nav.innerHTML = tabs.map(t => `
-                <button onclick="switchTab('${t.id}')" class="nav-item flex flex-col items-center gap-1 transition-all" id="nav-${t.id}">
+                <button onclick="window.switchTab('${t.id}')" class="nav-item flex flex-col items-center gap-1 transition-all" id="nav-${t.id}">
                     <div class="icon-box p-2 rounded-xl transition-colors">
                         <i data-lucide="${t.icon}" class="w-6 h-6"></i>
                     </div>
@@ -398,13 +449,12 @@
                 </button>
             `).join('');
             lucide.createIcons();
-        }
+        };
 
-        function getMyRecords() {
-            let records = state.recentContributions.filter(c => c.residentId === 1);
-            let projectIncomes = state.incomes.filter(i => i.residentId === 1).map(i => ({
-                id: i.id, residentId: i.residentId, name: i.title, date: i.date, amount: i.amount, category: i.category, status: 'completed'
-            }));
+        window.getMyRecords = function() {
+            let records = state.incomes.filter(c => c.residentId === 1 && c.category === 'Estate Dues').map(i => ({...i}));
+            let projectIncomes = state.incomes.filter(i => i.residentId === 1 && c.category !== 'Estate Dues').map(i => ({...i}));
+            
             let merged = [...records];
             projectIncomes.forEach(pi => { if (!merged.find(m => m.id === pi.id)) merged.push(pi); });
             merged.sort((a,b) => new Date(b.date) - new Date(a.date));
@@ -414,14 +464,14 @@
                 else merged = merged.filter(m => m.category.toLowerCase().includes(state.personalFilter.toLowerCase()));
             }
             return merged;
-        }
+        };
 
-        function setPersonalFilter(val) {
+        window.setPersonalFilter = function(val) {
             state.personalFilter = val;
-            switchTab('personal_dashboard');
-        }
+            window.switchTab('personal_dashboard');
+        };
 
-        function getFilteredRecords() {
+        window.getFilteredRecords = function() {
             let filtered = state.financeType === 'expense' ? [...state.expenses] : [...state.incomes];
             const now = new Date();
             if (state.financeFilters.period === 'daily') filtered = filtered.filter(e => new Date(e.date).toDateString() === now.toDateString());
@@ -441,31 +491,31 @@
                 }
             });
             return filtered;
-        }
+        };
 
-        function openFilterModal() {
+        window.openFilterModal = function() {
             const dataToFilter = state.financeType === 'expense' ? state.expenses : state.incomes;
             const categories = [...new Set(dataToFilter.map(e => e.category))];
             const content = `
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold">Filter & Sort</h2>
-                    <button onclick="resetFilters()" class="text-xs font-bold text-indigo-600">Reset</button>
+                    <button onclick="window.resetFilters()" class="text-xs font-bold text-indigo-600">Reset</button>
                 </div>
                 <div class="space-y-8">
                     <div>
                         <p class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3">Time Period</p>
                         <div class="flex flex-wrap gap-2">
                             ${['all', 'daily', 'monthly', 'yearly'].map(p => `
-                                <div onclick="setFilter('period', '${p}')" class="filter-chip ${state.financeFilters.period === p ? 'active' : ''}">${p === 'all' ? 'All Time' : p.charAt(0).toUpperCase() + p.slice(1)}</div>
+                                <div onclick="window.setFilter('period', '${p}')" class="filter-chip ${state.financeFilters.period === p ? 'active' : ''}">${p === 'all' ? 'All Time' : p.charAt(0).toUpperCase() + p.slice(1)}</div>
                             `).join('')}
                         </div>
                     </div>
                     <div>
                         <p class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3">Category</p>
                         <div class="flex flex-wrap gap-2">
-                            <div onclick="setFilter('category', 'all')" class="filter-chip ${state.financeFilters.category === 'all' ? 'active' : ''}">All Categories</div>
+                            <div onclick="window.setFilter('category', 'all')" class="filter-chip ${state.financeFilters.category === 'all' ? 'active' : ''}">All Categories</div>
                             ${categories.map(cat => `
-                                <div onclick="setFilter('category', '${cat}')" class="filter-chip ${state.financeFilters.category === cat ? 'active' : ''}">${cat}</div>
+                                <div onclick="window.setFilter('category', '${cat}')" class="filter-chip ${state.financeFilters.category === cat ? 'active' : ''}">${cat}</div>
                             `).join('')}
                         </div>
                     </div>
@@ -473,34 +523,33 @@
                         <p class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3">Sort By</p>
                         <div class="grid grid-cols-2 gap-2">
                             ${[{id: 'date-desc', label: 'Newest First'}, {id: 'date-asc', label: 'Oldest First'}, {id: 'amount-desc', label: 'Highest Amount'}, {id: 'amount-asc', label: 'Lowest Amount'}].map(s => `
-                                <div onclick="setFilter('sortBy', '${s.id}')" class="p-4 rounded-2xl border-2 text-center text-xs font-bold transition-all cursor-pointer ${state.financeFilters.sortBy === s.id ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-gray-50 text-gray-400'}">${s.label}</div>
+                                <div onclick="window.setFilter('sortBy', '${s.id}')" class="p-4 rounded-2xl border-2 text-center text-xs font-bold transition-all cursor-pointer ${state.financeFilters.sortBy === s.id ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-gray-50 text-gray-400'}">${s.label}</div>
                             `).join('')}
                         </div>
                     </div>
-                    <button onclick="applyFilters()" class="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl shadow-indigo-100">Apply Filters</button>
+                    <button onclick="window.applyFilters()" class="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl shadow-indigo-100">Apply Filters</button>
                 </div>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
-        }
+        };
 
-        function setFilter(key, value) { state.financeFilters[key] = value; openFilterModal(); }
-        function resetFilters() { state.financeFilters = { period: 'monthly', category: 'all', sortBy: 'date-desc' }; openFilterModal(); }
-        function applyFilters() { closeModal(); if (state.activeTab === 'finance') switchTab('finance'); }
+        window.setFilter = function(key, value) { state.financeFilters[key] = value; window.openFilterModal(); };
+        window.resetFilters = function() { state.financeFilters = { period: 'monthly', category: 'all', sortBy: 'date-desc' }; window.openFilterModal(); };
+        window.applyFilters = function() { window.closeModal(); if (state.activeTab === 'finance') window.switchTab('finance'); };
 
-        function setFinanceType(type) {
+        window.setFinanceType = function(type) {
             state.financeType = type;
-            state.financeFilters.category = 'all'; // Reset category on toggle
-            switchTab('finance');
-        }
+            state.financeFilters.category = 'all'; 
+            window.switchTab('finance');
+        };
 
-        function setVotingType(type) {
+        window.setVotingType = function(type) {
             state.votingType = type;
-            switchTab('voting');
-        }
+            window.switchTab('voting');
+        };
 
-        // --- Resident Interactions ---
-        function openPaymentModal() {
+        window.openPaymentModal = function() {
             const accNum = "5770" + Math.floor(100000 + Math.random() * 900000);
             const content = `
                 <div class="text-center">
@@ -524,58 +573,31 @@
                                 <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Account Number</p>
                                 <p class="font-black text-xl text-indigo-600 tracking-wider">${accNum}</p>
                             </div>
-                            <button onclick="copyAccountNum('${accNum}')" class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform">
+                            <button onclick="window.copyAccountNum('${accNum}')" class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform">
                                 <i data-lucide="copy" class="w-5 h-5"></i>
                             </button>
                         </div>
                     </div>
                     
-                    <button onclick="confirmPayment()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">I have made payment</button>
+                    <button onclick="window.confirmPayment()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">I have made payment</button>
                 </div>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             lucide.createIcons();
-        }
+        };
 
-        function confirmPayment() {
-            showToast('Payment submitted for verification!');
-            state.recentContributions.unshift({
-                id: Date.now(), 
-                residentId: 1, 
-                name: 'Alex Johnson', 
-                date: new Date().toISOString(), 
-                amount: 25000, 
-                category: 'Dues', 
-                status: 'pending'
-            });
-            closeModal();
-            if(state.activeTab === 'dashboard') switchTab('dashboard');
-        }
-
-        function copyAccountNum(text) {
+        window.copyAccountNum = function(text) {
             const el = document.createElement('textarea');
             el.value = text;
             document.body.appendChild(el);
             el.select();
             document.execCommand('copy');
             document.body.removeChild(el);
-            showToast('Account number copied!');
-        }
+            window.showToast('Account number copied!');
+        };
 
-        function submitVote(id, choice) {
-            const poll = state.polls.find(p => p.id === id);
-            if (poll && !poll.voted) {
-                if (choice === 'agree') poll.agree++;
-                else poll.disagree++;
-                poll.voted = true;
-                showToast('Vote recorded securely!');
-                switchTab('voting');
-            }
-        }
-
-        // --- Modals for Details & Admin Operations ---
-        function openExpenseDetails(expenseId) {
+        window.openExpenseDetails = function(expenseId) {
             const expense = state.expenses.find(e => e.id === expenseId);
             if(!expense) return;
             const vendor = state.vendors.find(v => v.id === expense.vendorId) || { name: 'Direct Expense / Unknown' };
@@ -613,14 +635,14 @@
                         <span class="text-sm font-bold text-gray-800">${expense.approver}</span>
                     </div>
                 </div>
-                <button onclick="closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
+                <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             lucide.createIcons();
-        }
+        };
 
-        function openVendorDetails(id) {
+        window.openVendorDetails = function(id) {
             const vendor = state.vendors.find(v => v.id === id);
             if(!vendor) return;
             const totalPaid = vendor.transactions.reduce((acc, t) => acc + t.amount, 0);
@@ -632,7 +654,7 @@
                     </div>
                     <div>
                         <h2 class="text-2xl font-bold">${vendor.name}</h2>
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">${vendor.service} • ${vendor.subCategory || 'General'}</p>
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">${vendor.service} ${vendor.subCategory ? `• ${vendor.subCategory}` : ''}</p>
                     </div>
                 </div>
 
@@ -647,7 +669,7 @@
                         <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Total Paid</p>
                         <p class="text-lg font-bold text-indigo-600">${formatCurrency(totalPaid)}</p>
                     </div>
-                    <div onclick="showToast('Calling ${vendor.contact} ...')" class="p-4 bg-indigo-50 rounded-2xl flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-transform">
+                    <div onclick="window.showToast('Calling ${vendor.contact} ...')" class="p-4 bg-indigo-50 rounded-2xl flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-transform">
                         <p class="text-[10px] font-bold text-indigo-400 uppercase mb-1">Contact</p>
                         <button class="text-indigo-600 font-bold text-sm">Call Office</button>
                     </div>
@@ -665,24 +687,18 @@
                         </div>
                     `).join('') : '<p class="text-sm text-gray-400">No transactions recorded.</p>'}
                 </div>
-                <button onclick="closeModal()" class="w-full mt-8 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg">Close Details</button>
+                <button onclick="window.closeModal()" class="w-full mt-8 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg">Close Details</button>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             lucide.createIcons();
-        }
+        };
 
-        function openResidentDetails(id) {
+        window.openResidentDetails = function(id) {
             const resident = state.residents.find(r => r.id === id);
             if(!resident) return;
             
-            // Collect their specific transactions
-            let records = state.recentContributions.filter(c => c.residentId === id);
-            let projectIncomes = state.incomes.filter(i => i.residentId === id).map(i => ({
-                id: i.id, residentId: i.residentId, name: i.title, date: i.date, amount: i.amount, category: i.category, status: 'completed'
-            }));
-            let merged = [...records, ...projectIncomes].sort((a,b) => new Date(b.date) - new Date(a.date));
-
+            let records = state.incomes.filter(c => c.residentId === id).sort((a,b) => new Date(b.date) - new Date(a.date));
             const isDue = resident.paymentStatus === 'Due';
 
             const content = `
@@ -711,12 +727,12 @@
                         <p class="text-[10px] font-bold uppercase tracking-widest ${isDue ? 'text-rose-400' : 'text-emerald-500'}">Payment Status</p>
                         <p class="text-lg font-black ${isDue ? 'text-rose-600' : 'text-emerald-600'}">${isDue ? 'Outstanding Dues' : 'Up to Date'}</p>
                     </div>
-                    ${isDue ? `<button onclick="showToast('Reminder Sent!')" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold shadow-md active:scale-95">Send Reminder</button>` : `<i data-lucide="check-circle-2" class="w-8 h-8 text-emerald-500"></i>`}
+                    ${isDue ? `<button onclick="window.showToast('Reminder Sent!')" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold shadow-md active:scale-95">Send Reminder</button>` : `<i data-lucide="check-circle-2" class="w-8 h-8 text-emerald-500"></i>`}
                 </div>
 
                 <h3 class="font-bold text-lg mb-4">Payment Records</h3>
                 <div class="space-y-3 max-h-48 overflow-y-auto hide-scroll pb-4">
-                    ${merged.length ? merged.map(t => `
+                    ${records.length ? records.map(t => `
                         <div class="flex justify-between items-center p-3 border border-gray-100 rounded-xl">
                             <div>
                                 <p class="text-sm font-bold text-gray-800">${t.category}</p>
@@ -727,256 +743,13 @@
                     `).join('') : '<p class="text-sm text-gray-400 text-center">No payment history.</p>'}
                 </div>
                 
-                <button onclick="closeModal()" class="w-full mt-6 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Profile</button>
+                <button onclick="window.closeModal()" class="w-full mt-6 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Profile</button>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             lucide.createIcons();
-        }
+        };
 
-        // Admin Function Modals
-        function openLogDisbursement() {
-            const content = `
-                <h2 class="text-2xl font-bold mb-6 text-rose-600">Log Disbursement</h2>
-                <div class="space-y-4">
-                    <input type="text" id="disburse-title" placeholder="Expense Description" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
-                    <input type="number" id="disburse-amount" placeholder="Amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
-                    
-                    <select id="disburse-vendor" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
-                        <option value="">Select Vendor...</option>
-                        ${state.vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('')}
-                    </select>
-                    
-                    <select id="disburse-category" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Security">Security</option>
-                        <option value="Utility">Utility</option>
-                        <option value="Sanitation">Sanitation</option>
-                        <option value="Miscellaneous">Miscellaneous</option>
-                    </select>
-
-                    <button onclick="saveDisbursement()" class="w-full mt-4 py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-all">Record Expense</button>
-                </div>
-            `;
-            document.getElementById('modal-content').innerHTML = content;
-            document.getElementById('modal-container').classList.remove('hidden');
-        }
-
-        function saveDisbursement() {
-            const title = document.getElementById('disburse-title').value;
-            const amount = parseFloat(document.getElementById('disburse-amount').value);
-            const vendorId = parseInt(document.getElementById('disburse-vendor').value);
-            const category = document.getElementById('disburse-category').value;
-
-            if(!title || !amount || !vendorId) return showToast("Please fill all fields!");
-
-            state.totalBalance -= amount;
-            state.expenses.unshift({
-                id: Date.now(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText
-            });
-
-            const vendor = state.vendors.find(v => v.id === vendorId);
-            if(vendor) vendor.transactions.unshift({ date: new Date().toISOString(), amount, desc: title });
-
-            showToast('Disbursement Logged!');
-            closeModal();
-            if(state.activeTab === 'manage') switchTab('manage');
-        }
-
-        function openAddPoll() {
-            const content = `
-                <h2 class="text-2xl font-bold mb-6 text-emerald-600">Create Voting Project</h2>
-                <div class="space-y-4">
-                    <input type="text" id="poll-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100">
-                    <textarea id="poll-desc" placeholder="Detailed Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100 h-24 resize-none"></textarea>
-                    
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Vote Dateline</label>
-                        <input type="datetime-local" id="poll-date" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100">
-                    </div>
-                    
-                    <button onclick="savePoll()" class="w-full mt-4 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all">Publish Project</button>
-                </div>
-            `;
-            document.getElementById('modal-content').innerHTML = content;
-            document.getElementById('modal-container').classList.remove('hidden');
-        }
-
-        function savePoll() {
-            const title = document.getElementById('poll-title').value;
-            const desc = document.getElementById('poll-desc').value;
-            const date = document.getElementById('poll-date').value;
-            
-            if(!title || !date) return showToast("Please provide title and dateline");
-
-            state.polls.unshift({
-                id: Date.now(), title, description: desc, totalResidents: 300, agree: 0, disagree: 0, ends: date, status: 'active', voted: false
-            });
-
-            showToast('Project Published to Town Hall!');
-            closeModal();
-            if(state.activeTab === 'manage') switchTab('manage'); 
-        }
-
-        function openAddCampaign() {
-            const content = `
-                <h2 class="text-2xl font-bold mb-6 text-indigo-600">New Funding Project</h2>
-                <div class="space-y-4">
-                    <input type="text" id="camp-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <textarea id="camp-desc" placeholder="Project Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none"></textarea>
-                    <input type="number" id="camp-target" placeholder="Target Amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Funding Dateline</label>
-                        <input type="date" id="camp-date" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    </div>
-                    
-                    <button onclick="saveCampaign()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Launch Project</button>
-                </div>
-            `;
-            document.getElementById('modal-content').innerHTML = content;
-            document.getElementById('modal-container').classList.remove('hidden');
-        }
-
-        function saveCampaign() {
-            const title = document.getElementById('camp-title').value;
-            const desc = document.getElementById('camp-desc').value;
-            const target = parseFloat(document.getElementById('camp-target').value);
-            const date = document.getElementById('camp-date').value;
-            
-            if(!title || !target || !date) return showToast("Provide title, target & dateline");
-
-            state.campaigns.unshift({
-                id: Date.now(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0
-            });
-
-            showToast('Funding Project Launched!');
-            closeModal();
-            if(state.activeTab === 'manage') switchTab('manage');
-        }
-
-        function openFundCampaignModal(id) {
-            const campaign = state.campaigns.find(c => c.id === id);
-            if(!campaign) return;
-            const content = `
-                <div class="text-center">
-                    <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-sm">
-                        <i data-lucide="wallet" class="w-8 h-8"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold mb-2">Fund Project</h2>
-                    <p class="text-gray-500 text-sm mb-6">Contribute to: <span class="font-bold text-gray-800">${campaign.title}</span></p>
-                    
-                    <input type="number" id="fund-amount" placeholder="Enter amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 mb-6 text-center text-lg">
-                    
-                    <button onclick="processFunding(${id})" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Make Contribution</button>
-                </div>
-            `;
-            document.getElementById('modal-content').innerHTML = content;
-            document.getElementById('modal-container').classList.remove('hidden');
-            lucide.createIcons();
-        }
-
-        function processFunding(id) {
-            const amount = parseFloat(document.getElementById('fund-amount').value);
-            if(!amount || amount <= 0) return showToast("Enter a valid amount");
-            
-            const campaign = state.campaigns.find(c => c.id === id);
-            if(campaign) {
-                campaign.raisedAmount += amount;
-                campaign.contributors += 1; 
-                
-                if(campaign.raisedAmount >= campaign.targetAmount) {
-                    campaign.raisedAmount = campaign.targetAmount;
-                    campaign.status = 'completed';
-                    campaign.ends = 'Closed';
-                }
-                
-                state.incomes.unshift({
-                    id: Date.now(), residentId: state.userType === 'admin' ? 0 : 1, title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042',
-                    category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042'
-                });
-                state.totalBalance += amount;
-            }
-            showToast("Contribution Successful!");
-            closeModal();
-            if(state.activeTab === 'voting') switchTab('voting');
-        }
-
-        function openAddResident() {
-            document.getElementById('modal-content').innerHTML = `
-                <h2 class="text-2xl font-bold mb-6">New Resident</h2>
-                <div class="space-y-4">
-                    <input type="text" id="res-name" placeholder="Full Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <div class="grid grid-cols-2 gap-4">
-                        <input type="text" id="res-house" placeholder="House No." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                        <input type="text" id="res-flat" placeholder="Flat/Unit" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    </div>
-                    <input type="text" id="res-street" placeholder="Street Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="tel" id="res-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="email" id="res-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    
-                    <button onclick="saveResident()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Add to Directory</button>
-                </div>
-            `;
-            document.getElementById('modal-container').classList.remove('hidden');
-        }
-
-        function saveResident() {
-            const name = document.getElementById('res-name').value;
-            const house = document.getElementById('res-house').value;
-            const flat = document.getElementById('res-flat').value;
-            const street = document.getElementById('res-street').value;
-            const phone = document.getElementById('res-phone').value;
-            const email = document.getElementById('res-email').value;
-
-            if(!name || !house || !street || !phone) return showToast('Fill required fields');
-            state.residents.unshift({ id: Date.now(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' });
-            showToast('Resident Registered!');
-            closeModal();
-            if(state.activeTab === 'manage') switchTab('manage');
-        }
-
-        function openAddVendor() {
-            document.getElementById('modal-content').innerHTML = `
-                <h2 class="text-2xl font-bold mb-6">Partner Onboarding</h2>
-                <div class="space-y-4">
-                    <input type="text" id="ven-name" placeholder="Company/Individual Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="tel" id="ven-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="email" id="ven-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="text" id="ven-address" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    
-                    <select id="ven-service" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                        <option value="Security">Security Services</option>
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Utility">Utilities</option>
-                        <option value="Sanitation">Sanitation</option>
-                    </select>
-                    
-                    <input type="text" id="ven-sub" placeholder="Sub-Category (e.g. Plumbing, Guards)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-
-                    <button onclick="saveVendor()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Vendor</button>
-                </div>
-            `;
-            document.getElementById('modal-container').classList.remove('hidden');
-        }
-
-        function saveVendor() {
-            const name = document.getElementById('ven-name').value;
-            const contact = document.getElementById('ven-phone').value;
-            const email = document.getElementById('ven-email').value;
-            const address = document.getElementById('ven-address').value;
-            const service = document.getElementById('ven-service').value;
-            const subCategory = document.getElementById('ven-sub').value;
-
-            if(!name || !contact) return showToast('Fill vendor name and phone');
-            state.vendors.unshift({ id: Date.now(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] });
-            showToast('Vendor Added!');
-            closeModal();
-            if(state.activeTab === 'manage') switchTab('manage');
-            if(state.activeTab === 'vendors') switchTab('vendors'); 
-        }
-
-        // --- Main Views ---
         const views = {
             dashboard: () => `
                 <div class="bg-indigo-600 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl">
@@ -988,7 +761,7 @@
                             <p class="text-[10px] font-bold uppercase tracking-widest opacity-80">Project Progress</p>
                             <div class="flex items-center gap-4">
                                 <div class="flex-1 progress-bar"><div class="progress-fill" style="width: 70%"></div></div>
-                                <button onclick="switchTab('finance')" class="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center cursor-pointer active:scale-90 transition-transform"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></button>
+                                <button onclick="window.switchTab('finance')" class="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center cursor-pointer active:scale-90 transition-transform"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></button>
                             </div>
                         </div>
                     </div>
@@ -1003,7 +776,7 @@
                     <div class="white-card p-5">
                         <div class="w-10 h-10 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-500 mb-4"><i data-lucide="activity" class="w-5 h-5"></i></div>
                         <p class="text-[10px] text-gray-400 font-bold mb-1">Expenses</p>
-                        <p class="font-bold text-lg">₦8.4M</p>
+                        <p class="font-bold text-lg">${formatCurrency(state.expenses.reduce((a,b)=>a+Number(b.amount),0))}</p>
                     </div>
                     <div class="white-card p-5">
                         <div class="w-10 h-10 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 mb-4"><i data-lucide="users" class="w-5 h-5"></i></div>
@@ -1015,15 +788,15 @@
                 <div>
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="font-bold text-lg text-gray-800">Recent Inflow</h3>
-                        <button onclick="setFinanceType('income')" class="text-indigo-600 text-xs font-bold">View All</button>
+                        <button onclick="window.setFinanceType('income')" class="text-indigo-600 text-xs font-bold">View All</button>
                     </div>
                     <div class="space-y-3 pb-4">
-                        ${state.recentContributions.slice(0, 4).map(c => `
+                        ${state.incomes.slice(0, 4).map(c => `
                             <div class="white-card p-4 flex items-center justify-between">
                                 <div class="flex items-center gap-4">
                                     <div class="w-10 h-10 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-300"><i data-lucide="user" class="w-5 h-5"></i></div>
                                     <div>
-                                        <p class="font-bold text-sm text-gray-800">${c.name}</p>
+                                        <p class="font-bold text-sm text-gray-800">${c.title}</p>
                                         <p class="text-[10px] text-gray-400 font-medium">${formatDate(c.date)} • ${c.category}</p>
                                     </div>
                                 </div>
@@ -1037,28 +810,27 @@
                 </div>
 
                 ${state.userType === 'resident' ? `
-                    <button onclick="openPaymentModal()" class="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-95 transition-transform">
-                        <i data-lucide="credit-card" class="w-6 h-6"></i>
-                        Pay My Dues
+                    <button onclick="window.openPaymentModal()" class="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-95 transition-transform">
+                        <i data-lucide="credit-card" class="w-6 h-6"></i> Pay My Dues
                     </button>
                 ` : ''}
             `,
 
             finance: () => {
-                const filtered = getFilteredRecords();
+                let filtered = window.getFilteredRecords();
                 return `
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="font-bold text-2xl text-gray-800">Financials</h3>
                     <div class="flex gap-2">
-                        <button onclick="openFilterModal()" class="w-10 h-10 white-card flex items-center justify-center active:scale-90 transition-transform shadow-md">
+                        <button onclick="window.openFilterModal()" class="w-10 h-10 white-card flex items-center justify-center active:scale-90 transition-transform shadow-md">
                             <i data-lucide="sliders-horizontal" class="w-4 h-4 ${state.financeFilters.period !== 'all' || state.financeFilters.category !== 'all' ? 'text-indigo-600' : 'text-gray-400'}"></i>
                         </button>
                     </div>
                 </div>
                 
                 <div class="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
-                    <button onclick="setFinanceType('expense')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${state.financeType === 'expense' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Expenses</button>
-                    <button onclick="setFinanceType('income')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${state.financeType === 'income' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Incomes</button>
+                    <button onclick="window.setFinanceType('expense')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${state.financeType === 'expense' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Expenses</button>
+                    <button onclick="window.setFinanceType('income')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${state.financeType === 'income' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Incomes</button>
                 </div>
                 
                 <div class="white-card p-6 mb-6">
@@ -1086,7 +858,7 @@
                     </div>
                     <div class="space-y-3 pb-8">
                         ${filtered.length ? filtered.map(e => `
-                            <div ${state.financeType === 'expense' ? `onclick="openExpenseDetails(${e.id})"` : ''} class="white-card p-4 flex items-center justify-between animate-fadeIn ${state.financeType === 'expense' ? 'cursor-pointer hover:bg-gray-50 active:scale-[0.98]' : ''} transition-all border border-transparent hover:border-gray-100">
+                            <div ${state.financeType === 'expense' ? `onclick="window.openExpenseDetails('${e.id}')"` : ''} class="white-card p-4 flex items-center justify-between animate-fadeIn ${state.financeType === 'expense' ? 'cursor-pointer hover:bg-gray-50 active:scale-[0.98]' : ''} transition-all border border-transparent hover:border-gray-100">
                                 <div class="flex items-center gap-4">
                                     <div class="w-12 h-12 ${e.color} rounded-2xl flex items-center justify-center text-white shadow-lg shadow-${e.color.split('-')[1]}-100">
                                         <i data-lucide="${e.icon}" class="w-6 h-6"></i>
@@ -1107,7 +879,7 @@
                 <h3 class="font-bold text-2xl text-gray-800 mb-6">Partners</h3>
                 <div class="space-y-4 pb-8">
                     ${state.vendors.map(v => `
-                        <div onclick="openVendorDetails(${v.id})" class="white-card p-5 flex items-center justify-between cursor-pointer active:scale-[0.98] hover:border-gray-100 border border-transparent transition-all">
+                        <div onclick="window.openVendorDetails('${v.id}')" class="white-card p-5 flex items-center justify-between cursor-pointer active:scale-[0.98] hover:border-gray-100 border border-transparent transition-all">
                             <div class="flex items-center gap-4">
                                 <div class="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-300"><i data-lucide="shield-check" class="w-6 h-6"></i></div>
                                 <div>
@@ -1128,18 +900,16 @@
                 <h3 class="font-bold text-2xl text-gray-800 mb-4">Town Hall</h3>
                 
                 <div class="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
-                    <button onclick="setVotingType('polls')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${isPolls ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Voting Polls</button>
-                    <button onclick="setVotingType('campaigns')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${!isPolls ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Funding Projects</button>
+                    <button onclick="window.setVotingType('polls')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${isPolls ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Voting Polls</button>
+                    <button onclick="window.setVotingType('campaigns')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${!isPolls ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Funding Projects</button>
                 </div>
 
                 <div class="space-y-6 pb-6">
-                    ${isPolls ? 
-                    state.polls.map(p => {
+                    ${isPolls ? state.polls.map(p => {
                         const totalVotes = p.agree + p.disagree;
                         const agreePct = totalVotes === 0 ? 0 : Math.round((p.agree / totalVotes) * 100);
                         const disagreePct = totalVotes === 0 ? 0 : Math.round((p.disagree / totalVotes) * 100);
-                        const isIsoDate = p.ends.includes('T'); // Handle properly formatted dates
-                        const displayDate = isIsoDate ? formatDateTime(p.ends) : p.ends;
+                        const displayDate = p.ends.includes('T') ? formatDateTime(p.ends) : p.ends;
 
                         return `
                         <div class="white-card p-6">
@@ -1150,13 +920,11 @@
                             ${p.description ? `<p class="text-sm text-gray-600 mb-4 leading-relaxed">${p.description}</p>` : ''}
                             <p class="text-xs text-gray-400 mb-4">${totalVotes} / ${p.totalResidents} Residents voted • ${p.status === 'active' ? 'Ends: ' + displayDate : 'Closed'}</p>
                             
-                            <!-- Progress Bar -->
                             <div class="w-full h-2 bg-gray-100 rounded-full mb-3 flex overflow-hidden">
                                 <div class="h-full bg-emerald-500 transition-all duration-500" style="width: ${agreePct}%"></div>
                                 <div class="h-full bg-rose-500 transition-all duration-500" style="width: ${disagreePct}%"></div>
                             </div>
                             
-                            <!-- Vote Count display -->
                             <div class="flex justify-between text-[10px] font-bold mb-5">
                                 <span class="text-emerald-600">${agreePct}% Agree (${p.agree})</span>
                                 <span class="text-rose-600">${disagreePct}% Disagree (${p.disagree})</span>
@@ -1167,18 +935,17 @@
                                 <div class="bg-gray-50 border border-gray-100 text-gray-500 text-center p-4 rounded-2xl text-sm font-bold mt-2">
                                     <i data-lucide="shield" class="w-4 h-4 inline-block mr-1 text-gray-400"></i> Admins cannot vote
                                 </div>
-                                ` :
-                                p.voted ? `
+                                ` : p.voted ? `
                                 <div class="bg-gray-50 border border-gray-100 text-gray-500 text-center p-4 rounded-2xl text-sm font-bold">
                                     <i data-lucide="check-circle-2" class="w-5 h-5 inline-block mr-2 text-emerald-500"></i> Your vote has been recorded.
                                 </div>
                                 ` : `
                                 <div class="space-y-3">
-                                    <button onclick="submitVote(${p.id}, 'agree')" class="w-full p-4 border border-gray-100 rounded-2xl text-sm font-bold text-left hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors flex justify-between group active:scale-[0.98]">
+                                    <button onclick="window.submitVote('${p.id}', 'agree')" class="w-full p-4 border border-gray-100 rounded-2xl text-sm font-bold text-left hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors flex justify-between group active:scale-[0.98]">
                                         Agree 
                                         <div class="w-5 h-5 rounded-full border-2 border-gray-200 group-hover:border-emerald-500 flex items-center justify-center"><div class="w-2.5 h-2.5 bg-emerald-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div></div>
                                     </button>
-                                    <button onclick="submitVote(${p.id}, 'disagree')" class="w-full p-4 border border-gray-100 rounded-2xl text-sm font-bold text-left hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors flex justify-between group active:scale-[0.98]">
+                                    <button onclick="window.submitVote('${p.id}', 'disagree')" class="w-full p-4 border border-gray-100 rounded-2xl text-sm font-bold text-left hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors flex justify-between group active:scale-[0.98]">
                                         Disagree 
                                         <div class="w-5 h-5 rounded-full border-2 border-gray-200 group-hover:border-rose-500 flex items-center justify-center"><div class="w-2.5 h-2.5 bg-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div></div>
                                     </button>
@@ -1186,14 +953,9 @@
                                 `
                             ) : ''}
                         </div>
-                    `}).join('') 
-                    
-                    : 
-                    
-                    state.campaigns.map(c => {
+                    `}).join('') : state.campaigns.map(c => {
                         const pct = Math.min(Math.round((c.raisedAmount / c.targetAmount) * 100), 100);
-                        const isIsoDate = c.ends.includes('-'); // Rough check for actual date input vs string like '1 week'
-                        const displayDate = isIsoDate ? formatDate(c.ends) : c.ends;
+                        const displayDate = c.ends.includes('-') ? formatDate(c.ends) : c.ends;
 
                         return `
                         <div class="white-card p-6">
@@ -1204,19 +966,17 @@
                             ${c.description ? `<p class="text-sm text-gray-600 mb-4 leading-relaxed">${c.description}</p>` : ''}
                             <p class="text-xs text-gray-400 mb-4">${c.status === 'active' ? 'Ends: ' + displayDate : 'Goal Reached'} • ${c.contributors} Contributors</p>
                             
-                            <!-- Progress Bar -->
                             <div class="w-full h-2 bg-gray-100 rounded-full mb-3 flex overflow-hidden">
                                 <div class="h-full bg-indigo-500 transition-all duration-500" style="width: ${pct}%"></div>
                             </div>
                             
-                            <!-- Fund Count display -->
                             <div class="flex justify-between text-[10px] font-bold mb-5">
                                 <span class="text-indigo-600">${pct}% Funded (${formatCurrency(c.raisedAmount)})</span>
                                 <span class="text-gray-400">Target: ${formatCurrency(c.targetAmount)}</span>
                             </div>
 
                             ${c.status === 'active' && state.userType === 'resident' ? `
-                            <button onclick="openFundCampaignModal(${c.id})" class="w-full py-4 bg-indigo-50 text-indigo-700 rounded-2xl text-sm font-bold active:scale-95 transition-all hover:bg-indigo-100">
+                            <button onclick="window.openFundCampaignModal('${c.id}')" class="w-full py-4 bg-indigo-50 text-indigo-700 rounded-2xl text-sm font-bold active:scale-95 transition-all hover:bg-indigo-100">
                                 Contribute to Project
                             </button>
                             ` : ''}
@@ -1231,15 +991,15 @@
                 
                 <h4 class="font-bold text-gray-800 mb-4 px-2">Operations</h4>
                 <div class="grid grid-cols-3 gap-3 mb-8">
-                    <button onclick="openLogDisbursement()" class="white-card p-4 flex flex-col items-center justify-center gap-2 border border-transparent hover:border-rose-100 active:scale-95 transition-all text-center">
+                    <button onclick="window.openLogDisbursement()" class="white-card p-4 flex flex-col items-center justify-center gap-2 border border-transparent hover:border-rose-100 active:scale-95 transition-all text-center">
                         <div class="w-10 h-10 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center"><i data-lucide="banknote" class="w-5 h-5"></i></div>
                         <p class="font-bold text-[10px]">Disburse Funds</p>
                     </button>
-                    <button onclick="openAddPoll()" class="white-card p-4 flex flex-col items-center justify-center gap-2 border border-transparent hover:border-emerald-100 active:scale-95 transition-all text-center">
+                    <button onclick="window.openAddPoll()" class="white-card p-4 flex flex-col items-center justify-center gap-2 border border-transparent hover:border-emerald-100 active:scale-95 transition-all text-center">
                         <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i data-lucide="vote" class="w-5 h-5"></i></div>
                         <p class="font-bold text-[10px]">New Poll</p>
                     </button>
-                    <button onclick="openAddCampaign()" class="white-card p-4 flex flex-col items-center justify-center gap-2 border border-transparent hover:border-indigo-100 active:scale-95 transition-all text-center">
+                    <button onclick="window.openAddCampaign()" class="white-card p-4 flex flex-col items-center justify-center gap-2 border border-transparent hover:border-indigo-100 active:scale-95 transition-all text-center">
                         <div class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i data-lucide="wallet" class="w-5 h-5"></i></div>
                         <p class="font-bold text-[10px]">New Project</p>
                     </button>
@@ -1247,11 +1007,11 @@
 
                 <h4 class="font-bold text-gray-800 mb-4 px-2">Directories</h4>
                 <div class="grid grid-cols-2 gap-4">
-                    <button onclick="openAddResident()" class="white-card p-6 flex flex-col items-center gap-3 hover:border-indigo-100 border border-transparent active:scale-95 transition-all">
+                    <button onclick="window.openAddResident()" class="white-card p-6 flex flex-col items-center gap-3 hover:border-indigo-100 border border-transparent active:scale-95 transition-all">
                         <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i data-lucide="user-plus" class="w-6 h-6"></i></div>
                         <p class="font-bold text-sm">Resident</p>
                     </button>
-                    <button onclick="openAddVendor()" class="white-card p-6 flex flex-col items-center gap-3 hover:border-indigo-100 border border-transparent active:scale-95 transition-all">
+                    <button onclick="window.openAddVendor()" class="white-card p-6 flex flex-col items-center gap-3 hover:border-indigo-100 border border-transparent active:scale-95 transition-all">
                         <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i data-lucide="truck" class="w-6 h-6"></i></div>
                         <p class="font-bold text-sm">Vendor</p>
                     </button>
@@ -1263,7 +1023,7 @@
                 </div>
                 <div class="space-y-3 pb-8">
                     ${state.residents.map(r => `
-                        <div onclick="openResidentDetails(${r.id})" class="white-card p-4 flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform hover:border-gray-100 border border-transparent">
+                        <div onclick="window.openResidentDetails('${r.id}')" class="white-card p-4 flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform hover:border-gray-100 border border-transparent">
                             <div>
                                 <p class="font-bold text-sm text-gray-800">${r.name}</p>
                                 <p class="text-[10px] text-gray-400 font-medium">House ${r.house}, Flat ${r.flat}</p>
@@ -1303,16 +1063,16 @@
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Phone Number</label>
                         <input type="tel" value="+234 801 234 5678" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
                     </div>
-                    <button onclick="showToast('Profile Updated Successfully!')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Changes</button>
+                    <button onclick="window.showToast('Profile Updated Successfully!')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Changes</button>
                 </div>
 
                 ${state.userType === 'resident' ? `
                     <div class="flex justify-between items-center mb-4 px-2">
                         <h4 class="font-bold text-gray-800">My Payment Records</h4>
-                        <button onclick="switchTab('personal_dashboard')" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg active:scale-95 transition-all border border-indigo-100 flex items-center gap-1">Detailed Dashboard <i data-lucide="arrow-right" class="w-3 h-3"></i></button>
+                        <button onclick="window.switchTab('personal_dashboard')" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg active:scale-95 transition-all border border-indigo-100 flex items-center gap-1">Detailed Dashboard <i data-lucide="arrow-right" class="w-3 h-3"></i></button>
                     </div>
                     <div class="space-y-3 mb-8">
-                        ${state.recentContributions.filter(c => c.residentId === 1).slice(0, 3).map(c => `
+                        ${window.getMyRecords().slice(0, 3).map(c => `
                             <div class="white-card p-4 flex items-center justify-between">
                                 <div>
                                     <p class="font-bold text-sm text-gray-800">${c.category}</p>
@@ -1324,15 +1084,15 @@
                     </div>
                 ` : ''}
                 
-                <button onclick="logout()" class="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold shadow-sm active:scale-95 transition-transform mb-8">Log Out</button>
+                <button onclick="window.logout()" class="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold shadow-sm active:scale-95 transition-transform mb-8">Log Out</button>
             `,
 
             personal_dashboard: () => {
-                const records = getMyRecords();
+                const records = window.getMyRecords();
                 return `
                     <div class="flex items-center justify-between mb-6">
                         <div class="flex items-center gap-3">
-                            <button onclick="switchTab('profile')" class="w-10 h-10 bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex items-center justify-center text-gray-600 active:scale-95"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
+                            <button onclick="window.switchTab('profile')" class="w-10 h-10 bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex items-center justify-center text-gray-600 active:scale-95"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
                             <h3 class="font-bold text-2xl text-gray-800">My Dashboard</h3>
                         </div>
                     </div>
@@ -1344,7 +1104,7 @@
 
                     <div class="flex gap-2 overflow-x-auto hide-scroll mb-6 pb-2">
                         ${['all', 'dues', 'project fee', 'pending'].map(f => `
-                            <div onclick="setPersonalFilter('${f}')" class="whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${state.personalFilter === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-gray-500 border-gray-100 hover:border-indigo-200'}">
+                            <div onclick="window.setPersonalFilter('${f}')" class="whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${state.personalFilter === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-gray-500 border-gray-100 hover:border-indigo-200'}">
                                 ${f === 'all' ? 'All Records' : f.charAt(0).toUpperCase() + f.slice(1)}
                             </div>
                         `).join('')}
@@ -1365,41 +1125,33 @@
             }
         };
 
-        function switchTab(tabId) {
+        window.switchTab = (tabId) => {
             state.activeTab = tabId;
             const main = document.getElementById('main-content');
             main.style.opacity = '0';
-            
             setTimeout(() => {
                 main.innerHTML = views[tabId]();
                 lucide.createIcons();
                 document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-                
-                // Only try to set active state if the tab belongs to the bottom nav
                 const navItem = document.getElementById('nav-' + tabId);
                 if(navItem) navItem.classList.add('active');
-
-                if (tabId === 'finance' || tabId === 'personal_dashboard') initCharts();
+                if (tabId === 'finance' || tabId === 'personal_dashboard') window.initCharts();
                 main.style.opacity = '1';
-                
-                // Scroll to top when changing views
                 window.scrollTo(0,0);
             }, 150);
-        }
+        };
+        
+        window.closeModal = () => document.getElementById('modal-container').classList.add('hidden');
 
-        function closeModal() {
-            document.getElementById('modal-container').classList.add('hidden');
-        }
-
-        function initCharts() {
+        window.initCharts = () => {
             if (state.activeTab === 'finance') {
-                const filtered = getFilteredRecords();
+                const filtered = window.getFilteredRecords();
                 const barCtx = document.getElementById('barChart');
                 if(barCtx) {
                     new Chart(barCtx, {
                         type: 'bar',
                         data: {
-                            labels: filtered.slice(0,5).map(e => formatDate(e.date).split(' ')[0]), // abbreviated date
+                            labels: filtered.slice(0,5).map(e => formatDate(e.date).split(' ')[0]),
                             datasets: [{
                                 data: filtered.slice(0,5).map(e => e.amount / 1000),
                                 backgroundColor: state.financeType === 'expense' ? '#6366f1' : '#10b981',
@@ -1434,12 +1186,8 @@
                                     callbacks: {
                                         label: function(context) {
                                             let label = context.label || '';
-                                            if (label) {
-                                                label += ': ';
-                                            }
-                                            if (context.parsed !== null) {
-                                                label += '₦' + context.parsed.toLocaleString();
-                                            }
+                                            if (label) label += ': ';
+                                            if (context.parsed !== null) label += '₦' + context.parsed.toLocaleString();
                                             return label;
                                         }
                                     }
@@ -1451,7 +1199,7 @@
             } else if (state.activeTab === 'personal_dashboard') {
                 const pCtx = document.getElementById('personalChart');
                 if(pCtx) {
-                    const myRecords = getMyRecords().filter(r => r.status === 'completed').reverse();
+                    const myRecords = window.getMyRecords().filter(r => r.status === 'completed').reverse();
                     new Chart(pCtx, {
                         type: 'line',
                         data: {
@@ -1470,38 +1218,34 @@
                     });
                 }
             }
-        }
+        };
 
         function initMap() {
-            // Initialize Leaflet map centered on Nigeria
             const map = L.map('nigeria-map', {
                 center: [9.0820, 8.6753], 
                 zoom: 5.2,
-                zoomControl: false, // hide zoom controls
-                dragging: false, // disable dragging so user can scroll page easily
+                zoomControl: false, 
+                dragging: false, 
                 scrollWheelZoom: false,
                 touchZoom: false,
                 doubleClickZoom: false,
                 boxZoom: false,
                 keyboard: false,
-                attributionControl: false // keep UI clean
+                attributionControl: false 
             });
             window.nigeriaMap = map;
 
-            // Clean, minimal CartoDB light map
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
                 subdomains: 'abcd',
                 maxZoom: 20
             }).addTo(map);
 
-            // Data for our blinking markers with exact geo-coordinates
             const markers = [
                 { coords: [6.5244, 3.3792], label: 'Lagos', dot: 'bg-indigo-600', pulse: 'bg-indigo-500', text: 'text-indigo-900', delay: '0s' },
                 { coords: [9.0579, 7.4951], label: 'Abuja', dot: 'bg-emerald-600', pulse: 'bg-emerald-500', text: 'text-emerald-900', delay: '0.5s' },
                 { coords: [4.8156, 7.0498], label: 'Rivers', dot: 'bg-rose-600', pulse: 'bg-rose-500', text: 'text-rose-900', delay: '1s' }
             ];
 
-            // Add custom HTML divIcons to the map
             markers.forEach(m => {
                 const icon = L.divIcon({
                     className: 'custom-pulse-marker',
@@ -1514,7 +1258,7 @@
                             <span class="text-[8px] font-bold mt-1 ${m.text} bg-white/90 px-1.5 py-0.5 rounded backdrop-blur-md shadow-sm border border-gray-100">${m.label}</span>
                         </div>
                     `,
-                    iconSize: [0, 0] // Anchor strictly at the coordinate
+                    iconSize: [0, 0] 
                 });
                 L.marker(m.coords, {icon: icon}).addTo(map);
             });
@@ -1527,7 +1271,6 @@
         };
 
         function initPsychologicalElements() {
-            // FOMO Logic (4s visible, 13s hidden, slides map up/down)
             const fomoMessages = [
                 "🔥 3 estates in Lagos joined this week",
                 "👥 34 Residents joined Duesily today",
@@ -1541,22 +1284,16 @@
             const fomoText = document.getElementById('fomo-text');
 
             function showFomo() {
-                // Expand the wrapper to push content down smoothly
                 fomoWrapper.style.maxHeight = '60px';
                 fomoWrapper.style.opacity = '1';
                 fomoWrapper.style.marginBottom = '2rem';
-                
-                // Keep visible for 4 seconds, then hide
                 setTimeout(hideFomo, 4000);
             }
 
             function hideFomo() {
-                // Collapse the wrapper to pull content up smoothly
                 fomoWrapper.style.maxHeight = '0px';
                 fomoWrapper.style.opacity = '0';
                 fomoWrapper.style.marginBottom = '0px';
-                
-                // Wait 13 seconds while hidden, update text, then show again
                 setTimeout(() => {
                     fomoIndex = (fomoIndex + 1) % fomoMessages.length;
                     fomoText.innerText = fomoMessages[fomoIndex];
@@ -1564,10 +1301,8 @@
                 }, 13000);
             }
             
-            // Start the very first animation cycle 1 second after page loads
             setTimeout(showFomo, 1000);
 
-            // Testimonials Logic (Fade text every 7 seconds)
             const testimonials = [
                 { quote: "We recovered <span class='text-indigo-600 font-black'>₦18.5M</span> in unpaid dues within 3 weeks of switching. The transparency totally transformed our community trust.", name: "Engr. Tunde O.", role: "Chairman, Lekki Phase 1" },
                 { quote: "The vendor management system is a lifesaver. No more arguing over who paid the plumber last month.", name: "Aisha M.", role: "Estate Secretary, Abuja" },
@@ -1582,16 +1317,340 @@
             const testContent = document.getElementById('testimonial-content');
             
             setInterval(() => {
-                testContent.style.opacity = '0';
-                setTimeout(() => {
-                    testIndex = (testIndex + 1) % testimonials.length;
-                    document.getElementById('test-quote').innerHTML = `"${testimonials[testIndex].quote}"`;
-                    document.getElementById('test-name').innerText = testimonials[testIndex].name;
-                    document.getElementById('test-role').innerText = testimonials[testIndex].role;
-                    testContent.style.opacity = '1';
-                }, 500); // Wait half a second for fade out before swapping text
+                if(testContent) {
+                    testContent.style.opacity = '0';
+                    setTimeout(() => {
+                        testIndex = (testIndex + 1) % testimonials.length;
+                        const quoteEl = document.getElementById('test-quote');
+                        const nameEl = document.getElementById('test-name');
+                        const roleEl = document.getElementById('test-role');
+                        
+                        if(quoteEl && nameEl && roleEl) {
+                            quoteEl.innerHTML = `"${testimonials[testIndex].quote}"`;
+                            nameEl.innerText = testimonials[testIndex].name;
+                            roleEl.innerText = testimonials[testIndex].role;
+                        }
+                        testContent.style.opacity = '1';
+                    }, 500); 
+                }
             }, 7000);
         }
+
+        // Wrapped Async Callers for Database mutations
+        window.openLogDisbursement = function() {
+            const content = `
+                <h2 class="text-2xl font-bold mb-6 text-rose-600">Log Disbursement</h2>
+                <div class="space-y-4">
+                    <input type="text" id="disburse-title" placeholder="Expense Description" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
+                    <input type="number" id="disburse-amount" placeholder="Amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
+                    
+                    <select id="disburse-vendor" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
+                        <option value="">Select Vendor...</option>
+                        ${state.vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('')}
+                    </select>
+                    
+                    <select id="disburse-category" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
+                        <option value="Maintenance">Maintenance</option>
+                        <option value="Security">Security</option>
+                        <option value="Utility">Utility</option>
+                        <option value="Sanitation">Sanitation</option>
+                        <option value="Miscellaneous">Miscellaneous</option>
+                    </select>
+
+                    <button onclick="window.saveDisbursement()" class="w-full mt-4 py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-all">Record Expense</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+        };
+
+        window.openAddPoll = function() {
+            const content = `
+                <h2 class="text-2xl font-bold mb-6 text-emerald-600">Create Voting Project</h2>
+                <div class="space-y-4">
+                    <input type="text" id="poll-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    <textarea id="poll-desc" placeholder="Detailed Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100 h-24 resize-none"></textarea>
+                    
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Vote Dateline</label>
+                        <input type="datetime-local" id="poll-date" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    
+                    <button onclick="window.savePoll()" class="w-full mt-4 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all">Publish Project</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+        };
+
+        window.openAddCampaign = function() {
+            const content = `
+                <h2 class="text-2xl font-bold mb-6 text-indigo-600">New Funding Project</h2>
+                <div class="space-y-4">
+                    <input type="text" id="camp-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <textarea id="camp-desc" placeholder="Project Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none"></textarea>
+                    <input type="number" id="camp-target" placeholder="Target Amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Funding Dateline</label>
+                        <input type="date" id="camp-date" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    </div>
+                    
+                    <button onclick="window.saveCampaign()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Launch Project</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+        };
+
+        window.openFundCampaignModal = function(id) {
+            const campaign = state.campaigns.find(c => c.id === id);
+            if(!campaign) return;
+            const content = `
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-sm">
+                        <i data-lucide="wallet" class="w-8 h-8"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold mb-2">Fund Project</h2>
+                    <p class="text-gray-500 text-sm mb-6">Contribute to: <span class="font-bold text-gray-800">${campaign.title}</span></p>
+                    
+                    <input type="number" id="fund-amount" placeholder="Enter amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 mb-6 text-center text-lg">
+                    
+                    <button onclick="window.processFunding('${id}')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Make Contribution</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        window.openAddResident = function() {
+            document.getElementById('modal-content').innerHTML = `
+                <h2 class="text-2xl font-bold mb-6">New Resident</h2>
+                <div class="space-y-4">
+                    <input type="text" id="res-name" placeholder="Full Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="text" id="res-house" placeholder="House No." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <input type="text" id="res-flat" placeholder="Flat/Unit" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    </div>
+                    <input type="text" id="res-street" placeholder="Street Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="tel" id="res-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="email" id="res-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    
+                    <button onclick="window.saveResident()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Add to Directory</button>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
+        };
+
+        window.openAddVendor = function() {
+            document.getElementById('modal-content').innerHTML = `
+                <h2 class="text-2xl font-bold mb-6">Partner Onboarding</h2>
+                <div class="space-y-4">
+                    <input type="text" id="ven-name" placeholder="Company/Individual Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="tel" id="ven-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="email" id="ven-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="text" id="ven-address" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    
+                    <select id="ven-service" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <option value="Security">Security Services</option>
+                        <option value="Maintenance">Maintenance</option>
+                        <option value="Utility">Utilities</option>
+                        <option value="Sanitation">Sanitation</option>
+                    </select>
+                    
+                    <input type="text" id="ven-sub" placeholder="Sub-Category (e.g. Plumbing, Guards)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+
+                    <button onclick="window.saveVendor()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Vendor</button>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
+        };
+
+        window.confirmPayment = async () => {
+            window.showToast('Payment submitted for verification!');
+            if(!supabase) {
+                state.incomes.unshift({ id: generateId(), residentId: 1, title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' });
+                window.closeModal();
+                if(state.activeTab === 'dashboard') window.switchTab('dashboard');
+                return;
+            }
+
+            await supabase.from('duesily_incomes').insert([{ residentId: 1, title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' }]);
+            window.closeModal();
+            if(state.activeTab === 'dashboard') window.switchTab('dashboard');
+        };
+
+        window.submitVote = async (id, choice) => {
+            const poll = state.polls.find(p => p.id === id);
+            if (poll && !poll.voted) {
+                if(!supabase) {
+                    if (choice === 'agree') poll.agree += 1;
+                    else poll.disagree += 1;
+                    poll.voted = true;
+                    window.showToast('Vote recorded securely!');
+                    window.switchTab('voting');
+                    return;
+                }
+
+                const updates = { voted: true };
+                if (choice === 'agree') updates.agree = poll.agree + 1;
+                else updates.disagree = poll.disagree + 1;
+                
+                await supabase.from('duesily_polls').update(updates).eq('id', id);
+                window.showToast('Vote recorded securely!');
+            }
+        };
+
+        window.saveDisbursement = async () => {
+            const title = document.getElementById('disburse-title').value;
+            const amount = parseFloat(document.getElementById('disburse-amount').value);
+            const vendorId = document.getElementById('disburse-vendor').value;
+            const category = document.getElementById('disburse-category').value;
+            if(!title || !amount || !vendorId) return window.showToast("Please fill all fields!");
+
+            if(!supabase) {
+                state.totalBalance -= amount;
+                state.expenses.unshift({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
+                const vendor = state.vendors.find(v => v.id === vendorId);
+                if(vendor) vendor.transactions.unshift({ date: new Date().toISOString(), amount, desc: title });
+                window.showToast('Disbursement Logged!');
+                window.closeModal();
+                if(state.activeTab === 'manage') window.switchTab('manage');
+                return;
+            }
+
+            await supabase.from('duesily_expenses').insert([{ title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText }]);
+            
+            const vendor = state.vendors.find(v => v.id === vendorId);
+            if(vendor) {
+                const trans = [{ date: new Date().toISOString(), amount, desc: title }, ...(vendor.transactions || [])];
+                await supabase.from('duesily_vendors').update({ transactions: trans }).eq('id', vendorId);
+            }
+
+            window.showToast('Disbursement Logged!');
+            window.closeModal();
+        };
+
+        window.savePoll = async () => {
+            const title = document.getElementById('poll-title').value;
+            const desc = document.getElementById('poll-desc').value;
+            const date = document.getElementById('poll-date').value;
+            if(!title || !date) return window.showToast("Please provide title and dateline");
+
+            if(!supabase) {
+                state.polls.unshift({ id: generateId(), title, description: desc, totalResidents: 300, agree: 0, disagree: 0, ends: date, status: 'active', voted: false });
+                window.showToast('Project Published!');
+                window.closeModal();
+                if(state.activeTab === 'manage') window.switchTab('manage');
+                return;
+            }
+
+            await supabase.from('duesily_polls').insert([{ title, description: desc, totalResidents: 300, agree: 0, disagree: 0, ends: date, status: 'active', voted: false }]);
+            window.showToast('Project Published!');
+            window.closeModal();
+        };
+
+        window.saveCampaign = async () => {
+            const title = document.getElementById('camp-title').value;
+            const desc = document.getElementById('camp-desc').value;
+            const target = parseFloat(document.getElementById('camp-target').value);
+            const date = document.getElementById('camp-date').value;
+            if(!title || !target || !date) return window.showToast("Provide title, target & dateline");
+
+            if(!supabase) {
+                state.campaigns.unshift({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 });
+                window.showToast('Funding Project Launched!');
+                window.closeModal();
+                if(state.activeTab === 'manage') window.switchTab('manage');
+                return;
+            }
+
+            await supabase.from('duesily_campaigns').insert([{ title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 }]);
+            window.showToast('Funding Project Launched!');
+            window.closeModal();
+        };
+
+        window.processFunding = async (id) => {
+            const amount = parseFloat(document.getElementById('fund-amount').value);
+            if(!amount || amount <= 0) return window.showToast("Enter a valid amount");
+            
+            const campaign = state.campaigns.find(c => c.id === id);
+            if(campaign) {
+                let rAmt = campaign.raisedAmount + amount;
+                let stat = 'active';
+                let endDt = campaign.ends;
+                if(rAmt >= campaign.targetAmount) { rAmt = campaign.targetAmount; stat = 'completed'; endDt = 'Closed'; }
+                
+                if(!supabase) {
+                    campaign.raisedAmount = rAmt;
+                    campaign.contributors += 1;
+                    campaign.status = stat;
+                    campaign.ends = endDt;
+                    state.incomes.unshift({ id: generateId(), residentId: state.userType === 'admin' ? 0 : 1, title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' });
+                    state.totalBalance += amount;
+                    window.showToast("Contribution Successful!");
+                    window.closeModal();
+                    if(state.activeTab === 'voting') window.switchTab('voting');
+                    return;
+                }
+
+                await supabase.from('duesily_campaigns').update({ raisedAmount: rAmt, contributors: campaign.contributors + 1, status: stat, ends: endDt }).eq('id', id);
+                await supabase.from('duesily_incomes').insert([{ residentId: state.userType === 'admin' ? 0 : 1, title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' }]);
+            }
+            window.showToast("Contribution Successful!");
+            window.closeModal();
+        };
+
+        window.saveResident = async () => {
+            const name = document.getElementById('res-name').value;
+            const house = document.getElementById('res-house').value;
+            const flat = document.getElementById('res-flat').value;
+            const street = document.getElementById('res-street').value;
+            const phone = document.getElementById('res-phone').value;
+            const email = document.getElementById('res-email').value;
+
+            if(!name || !house || !street || !phone) return window.showToast('Fill required fields');
+            
+            if(!supabase) {
+                state.residents.unshift({ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' });
+                window.showToast('Resident Registered!');
+                window.closeModal();
+                if(state.activeTab === 'manage') window.switchTab('manage');
+                return;
+            }
+
+            await supabase.from('duesily_residents').insert([{ name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' }]);
+            window.showToast('Resident Registered!');
+            window.closeModal();
+        };
+
+        window.saveVendor = async () => {
+            const name = document.getElementById('ven-name').value;
+            const contact = document.getElementById('ven-phone').value;
+            const email = document.getElementById('ven-email').value;
+            const address = document.getElementById('ven-address').value;
+            const service = document.getElementById('ven-service').value;
+            const subCategory = document.getElementById('ven-sub').value;
+
+            if(!name || !contact) return window.showToast('Fill vendor name and phone');
+            
+            if(!supabase) {
+                state.vendors.unshift({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] });
+                window.showToast('Vendor Added!');
+                window.closeModal();
+                if(state.activeTab === 'manage') window.switchTab('manage');
+                return;
+            }
+
+            await supabase.from('duesily_vendors').insert([{ name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }]);
+            window.showToast('Vendor Added!');
+            window.closeModal();
+        };
+
+        // Bootstrap Supabase
+        initSupabase();
+
     </script>
 </body>
 </html>
