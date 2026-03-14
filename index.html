@@ -12,6 +12,7 @@
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icons/icon.svg">
+    <script src="./config.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -287,8 +288,8 @@
         // =================================================================================
         // SUPABASE CONFIGURATION
         // =================================================================================
-        const SUPABASE_URL = 'https://wzjcdfyfkjkbblofohrr.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6amNkZnlma2prYmJsb2ZvaHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MDEzODYsImV4cCI6MjA4OTA3NzM4Nn0.NItjbAPOcqELxTX4tuRlpUtWohs7CTDHGr-IhoeDyTo';
+        const SUPABASE_URL = window.DUESILY_CONFIG?.supabaseUrl || '';
+        const SUPABASE_ANON_KEY = window.DUESILY_CONFIG?.supabaseAnonKey || '';
 
         let supabase = null;
         let deferredInstallPrompt = null;
@@ -318,6 +319,9 @@
         // --- Supabase Initialization ---
         async function initSupabase() {
             try {
+                if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+                    throw new Error('Missing Duesily Supabase configuration. Update config.js before deploying.');
+                }
                 supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 
                 // Fetch existing data
@@ -385,6 +389,29 @@
             return String(value ?? '');
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function sanitizeForState(value) {
+            if (Array.isArray(value)) return value.map(sanitizeForState);
+            if (value && typeof value === 'object') {
+                return Object.fromEntries(
+                    Object.entries(value).map(([key, nestedValue]) => [key, sanitizeForState(nestedValue)])
+                );
+            }
+            return typeof value === 'string' ? escapeHtml(value.trim()) : value;
+        }
+
+        function sanitizeCollection(records) {
+            return Array.isArray(records) ? records.map(sanitizeForState) : [];
+        }
+
         function getCurrentResident() {
             return state.residents.find(r => normalizeId(r.id) === normalizeId(state.currentResidentId)) || null;
         }
@@ -413,16 +440,17 @@
                 return defaultRows[stateKey] || [];
             }
 
-            state[stateKey] = data || [];
+            state[stateKey] = sanitizeCollection(data);
             updateGlobalState();
             return state[stateKey];
         }
 
         function upsertLocalRecord(stateKey, record) {
             if (!record) return;
-            const idx = state[stateKey].findIndex(item => normalizeId(item.id) === normalizeId(record.id));
-            if (idx > -1) state[stateKey][idx] = record;
-            else state[stateKey].unshift(record);
+            const safeRecord = sanitizeForState(record);
+            const idx = state[stateKey].findIndex(item => normalizeId(item.id) === normalizeId(safeRecord.id));
+            if (idx > -1) state[stateKey][idx] = safeRecord;
+            else state[stateKey].unshift(safeRecord);
         }
 
         async function runMutation(task, successMessage, errorMessage) {
@@ -464,7 +492,7 @@
                     return;
                 }
 
-                if (data) state[stateKey] = data;
+                if (data) state[stateKey] = sanitizeCollection(data);
             };
 
             await Promise.all([
@@ -484,8 +512,7 @@
                 if (payload.eventType === 'INSERT') {
                     upsertLocalRecord(stateKey, payload.new);
                 } else if (payload.eventType === 'UPDATE') {
-                    const idx = state[stateKey].findIndex(i => normalizeId(i.id) === normalizeId(payload.new.id));
-                    if(idx > -1) state[stateKey][idx] = payload.new;
+                    upsertLocalRecord(stateKey, payload.new);
                 } else if (payload.eventType === 'DELETE') {
                     state[stateKey] = state[stateKey].filter(i => normalizeId(i.id) !== normalizeId(payload.old.id));
                 }
@@ -1737,7 +1764,7 @@
 
         window.confirmPayment = async () => {
             if(!supabase) {
-                state.incomes.unshift({ id: generateId(), residentId: getCurrentResidentId(), title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' });
+                upsertLocalRecord('incomes', { id: generateId(), residentId: getCurrentResidentId(), title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' });
                 updateGlobalState();
                 window.showToast('Payment submitted for verification!');
                 window.closeModal();
@@ -1745,7 +1772,7 @@
                 return;
             }
 
-            const paymentPayload = { residentId: getCurrentResidentId(), title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' };
+            const paymentPayload = { id: generateId(), residentId: getCurrentResidentId(), title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' };
             const result = await runMutation(
                 async () => supabase.from('duesily_incomes').insert([paymentPayload]),
                 'Payment submitted for verification!',
@@ -1795,9 +1822,11 @@
 
             if(!supabase) {
                 state.totalBalance -= amount;
-                state.expenses.unshift({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
+                upsertLocalRecord('expenses', { id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
                 const vendor = state.vendors.find(v => v.id === vendorId);
-                if(vendor) vendor.transactions = [{ date: new Date().toISOString(), amount, desc: title }, ...(vendor.transactions || [])];
+                if(vendor) {
+                    vendor.transactions = sanitizeForState([{ date: new Date().toISOString(), amount, desc: title }, ...(vendor.transactions || [])]);
+                }
                 updateGlobalState();
                 window.showToast('Disbursement Logged!');
                 window.closeModal();
@@ -1805,7 +1834,7 @@
                 return;
             }
 
-            const expensePayload = { title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText };
+            const expensePayload = { id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText };
             const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
             if (expenseInsert.error) {
                 console.error('Failed to log disbursement:', expenseInsert.error);
@@ -1836,7 +1865,7 @@
             if(!title || !date) return window.showToast("Please provide title and dateline");
 
             if(!supabase) {
-                state.polls.unshift({ id: generateId(), title, description: desc, totalResidents: 300, agree: 0, disagree: 0, ends: date, status: 'active', voted: false });
+                upsertLocalRecord('polls', { id: generateId(), title, description: desc, totalResidents: 300, agree: 0, disagree: 0, ends: date, status: 'active', voted: false });
                 updateGlobalState();
                 window.showToast('Project Published!');
                 window.closeModal();
@@ -1844,15 +1873,15 @@
                 return;
             }
 
-            const pollPayload = { title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false };
+            const pollPayload = { id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false };
             const { data, error } = await supabase.from('duesily_polls').insert([pollPayload]).select().single();
             if (error) {
                 console.error('Failed to publish poll:', error);
                 return window.showToast('Could not publish poll');
             }
 
-            if (data && !state.polls.some(p => p.id === data.id)) {
-                state.polls.unshift(data);
+            if (data && !state.polls.some(p => normalizeId(p.id) === normalizeId(data.id))) {
+                upsertLocalRecord('polls', data);
                 updateGlobalState();
             }
 
@@ -1868,7 +1897,7 @@
             if(!title || !target || !date) return window.showToast("Provide title, target & dateline");
 
             if(!supabase) {
-                state.campaigns.unshift({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 });
+                upsertLocalRecord('campaigns', { id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 });
                 updateGlobalState();
                 window.showToast('Funding Project Launched!');
                 window.closeModal();
@@ -1876,15 +1905,15 @@
                 return;
             }
 
-            const campaignPayload = { title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 };
+            const campaignPayload = { id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 };
             const { data, error } = await supabase.from('duesily_campaigns').insert([campaignPayload]).select().single();
             if (error) {
                 console.error('Failed to launch campaign:', error);
                 return window.showToast('Could not launch project');
             }
 
-            if (data && !state.campaigns.some(c => c.id === data.id)) {
-                state.campaigns.unshift(data);
+            if (data && !state.campaigns.some(c => normalizeId(c.id) === normalizeId(data.id))) {
+                upsertLocalRecord('campaigns', data);
                 updateGlobalState();
             }
 
@@ -1908,7 +1937,7 @@
                     campaign.contributors += 1;
                     campaign.status = stat;
                     campaign.ends = endDt;
-                    state.incomes.unshift({ id: generateId(), residentId: state.userType === 'admin' ? 0 : 1, title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' });
+                    upsertLocalRecord('incomes', { id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' });
                     state.totalBalance += amount;
                     window.showToast("Contribution Successful!");
                     window.closeModal();
@@ -1922,7 +1951,7 @@
                     return window.showToast('Could not update contribution');
                 }
 
-                const incomePayload = { residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' };
+                const incomePayload = { id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' };
                 const incomeInsert = await supabase.from('duesily_incomes').insert([incomePayload]).select().single();
                 if (incomeInsert.error) {
                     console.error('Failed to record contribution income:', incomeInsert.error);
@@ -1948,7 +1977,7 @@
             if(!name || !house || !street || !phone) return window.showToast('Fill required fields');
             
             if(!supabase) {
-                state.residents.unshift({ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' });
+                upsertLocalRecord('residents', { id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' });
                 updateGlobalState();
                 window.showToast('Resident Registered!');
                 window.closeModal();
@@ -1956,7 +1985,7 @@
                 return;
             }
 
-            const { data, error } = await supabase.from('duesily_residents').insert([{ name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' }]).select().single();
+            const { data, error } = await supabase.from('duesily_residents').insert([{ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' }]).select().single();
             if (error) {
                 console.error('Failed to create resident:', error);
                 return window.showToast('Could not register resident');
@@ -1979,7 +2008,7 @@
             if(!name || !contact) return window.showToast('Fill vendor name and phone');
             
             if(!supabase) {
-                state.vendors.unshift({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] });
+                upsertLocalRecord('vendors', { id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] });
                 updateGlobalState();
                 window.showToast('Vendor Added!');
                 window.closeModal();
@@ -1987,7 +2016,7 @@
                 return;
             }
 
-            const { data, error } = await supabase.from('duesily_vendors').insert([{ name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }]).select().single();
+            const { data, error } = await supabase.from('duesily_vendors').insert([{ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }]).select().single();
             if (error) {
                 console.error('Failed to create vendor:', error);
                 return window.showToast('Could not add vendor');
