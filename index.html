@@ -131,6 +131,7 @@
         <!-- Login Form -->
         <div id="login-form-container" class="w-full max-w-sm z-10 relative hidden transition-all duration-300 opacity-0 transform translate-y-4 bg-white p-6 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-50">
             <h3 id="login-form-title" class="text-xl font-bold text-gray-800 mb-6 text-center">Login</h3>
+            <p id="login-form-subtitle" class="hidden text-xs text-gray-500 text-center -mt-3 mb-6">Sign in with an estate admin email or staff contact.</p>
             <div class="space-y-4 mb-6 text-left">
                 <div>
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Email Address</label>
@@ -142,6 +143,7 @@
                 </div>
             </div>
             <button id="login-submit-btn" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm mb-4">Sign In</button>
+            <button id="admin-signup-btn" onclick="window.openAdminSignup()" class="hidden w-full py-3 bg-indigo-50 text-indigo-700 rounded-2xl font-bold text-sm mb-3 border border-indigo-100 active:scale-95 transition-all">Create Estate Account</button>
             <button onclick="window.hideLogin()" class="w-full py-2 text-gray-400 text-xs font-bold hover:text-gray-800 transition-colors">← Back to Roles</button>
         </div>
 
@@ -294,6 +296,8 @@
         let supabase = null;
         let deferredInstallPrompt = null;
         const chartStore = {};
+        const ESTATE_SIGNUPS_TABLE = 'duesily_estate_signups';
+        const LOCAL_SIGNUPS_KEY = 'duesily_estate_signups_local';
 
         // Global Production App State (Completely Empty Initial State)
         const state = {
@@ -389,6 +393,14 @@
             return String(value ?? '');
         }
 
+        function toStr(value) {
+            return String(value ?? '').trim();
+        }
+
+        function normalizePhone(value) {
+            return String(value || '').replace(/\D/g, '');
+        }
+
         function escapeHtml(value) {
             return String(value ?? '')
                 .replaceAll('&', '&amp;')
@@ -410,6 +422,87 @@
 
         function sanitizeCollection(records) {
             return Array.isArray(records) ? records.map(sanitizeForState) : [];
+        }
+
+        async function hashPassword(password) {
+            const text = toStr(password);
+            const data = new TextEncoder().encode(text);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        function getLocalEstateSignups() {
+            try {
+                return JSON.parse(localStorage.getItem(LOCAL_SIGNUPS_KEY) || '[]');
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function saveLocalEstateSignups(signups) {
+            localStorage.setItem(LOCAL_SIGNUPS_KEY, JSON.stringify(signups));
+        }
+
+        async function fetchEstateSignups() {
+            if (!supabase) return sanitizeCollection(getLocalEstateSignups());
+
+            const { data, error } = await supabase
+                .from(ESTATE_SIGNUPS_TABLE)
+                .select('*')
+                .order('createdAt', { ascending: false });
+
+            if (error) {
+                console.error('Failed to fetch estate signups:', error);
+                return sanitizeCollection(getLocalEstateSignups());
+            }
+
+            return sanitizeCollection(data);
+        }
+
+        async function createEstateSignup(signupPayload) {
+            const safePayload = sanitizeForState(signupPayload);
+
+            if (!supabase) {
+                const signups = getLocalEstateSignups();
+                signups.unshift(safePayload);
+                saveLocalEstateSignups(signups);
+                return safePayload;
+            }
+
+            const { data, error } = await supabase
+                .from(ESTATE_SIGNUPS_TABLE)
+                .insert([signupPayload])
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Failed to create estate signup:', error);
+                const signups = getLocalEstateSignups();
+                signups.unshift(safePayload);
+                saveLocalEstateSignups(signups);
+                return safePayload;
+            }
+
+            return sanitizeForState(data);
+        }
+
+        async function findAdminAccount(loginId) {
+            const signups = await fetchEstateSignups();
+            const normalizedLogin = toStr(loginId).toLowerCase();
+
+            return signups.find(signup => {
+                const estateEmail = toStr(signup.email).toLowerCase();
+                const estatePhone = normalizePhone(signup.phone);
+                const staffMembers = Array.isArray(signup.adminStaff) ? signup.adminStaff : [];
+
+                if (estateEmail === normalizedLogin || estatePhone === normalizePhone(loginId)) return true;
+
+                return staffMembers.some(staff => {
+                    const staffEmail = toStr(staff.email).toLowerCase();
+                    const staffPhone = normalizePhone(staff.phone);
+                    return staffEmail === normalizedLogin || staffPhone === normalizePhone(loginId);
+                });
+            }) || null;
         }
 
         function getCurrentResident() {
@@ -573,6 +666,8 @@
         // --- Authentication Flow ---
         window.showLogin = function(type) {
             document.getElementById('login-form-title').innerText = type === 'admin' ? 'Admin Secure Login' : 'Resident Portal Login';
+            document.getElementById('login-form-subtitle').classList.toggle('hidden', type !== 'admin');
+            document.getElementById('admin-signup-btn').classList.toggle('hidden', type !== 'admin');
             document.getElementById('role-selection').classList.add('hidden');
             
             const formContainer = document.getElementById('login-form-container');
@@ -590,11 +685,23 @@
             }, 300);
         };
 
-        window.performLogin = function(type) {
+        window.performLogin = async function(type) {
             const email = document.getElementById('login-email').value;
             const pass = document.getElementById('login-pass').value;
             if(!email || !pass) return window.showToast("Please enter credentials");
-            
+
+            if (type === 'admin') {
+                const account = await findAdminAccount(email);
+                if (!account) return window.showToast('Estate admin account not found');
+
+                const passwordHash = await hashPassword(pass);
+                if (passwordHash !== account.passwordHash) return window.showToast('Invalid admin credentials');
+
+                window.showToast("Authenticating securely...");
+                setTimeout(() => window.login(type, account), 800);
+                return;
+            }
+
             window.showToast("Authenticating securely...");
             setTimeout(() => window.login(type), 800);
         };
@@ -610,7 +717,7 @@
             }, 800);
         };
 
-        window.login = function(type) {
+        window.login = function(type, adminAccount = null) {
             state.userType = type;
             
             // Determine name and avatar based on real DB data if possible (using Resident ID 1 for mock resident auth flow)
@@ -618,6 +725,8 @@
             if (type === 'resident') {
                 const residentData = getCurrentResident();
                 userName = residentData ? residentData.name : 'Resident User';
+            } else if (adminAccount) {
+                userName = adminAccount.estateName || adminAccount.name || 'Estate Admin';
             }
 
             document.getElementById('user-name').innerText = userName;
@@ -626,6 +735,113 @@
             document.getElementById('app-container').classList.remove('hidden');
             window.renderNav();
             window.switchTab('dashboard');
+        };
+
+        window.openAdminSignup = async function() {
+            const content = `
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-900">Create Estate Account</h2>
+                        <p class="text-sm text-gray-500 mt-1">Register the estate and its core admin staff.</p>
+                    </div>
+                    <button onclick="window.captureEstateLocation()" class="px-3 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-100">Get GPS</button>
+                </div>
+                <div class="space-y-4">
+                    <input type="text" id="estate-name" placeholder="Name of Estate" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <textarea id="estate-address" placeholder="Address of Estate" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none"></textarea>
+                    <input type="text" id="estate-gps" placeholder="GPS location will appear here" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" readonly>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="email" id="estate-email" placeholder="Estate Email" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <input type="tel" id="estate-phone" placeholder="Estate Phone" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    </div>
+                    <input type="password" id="estate-password" placeholder="Password" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
+                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Admin Staff 1</p>
+                        <input type="text" id="staff-1-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <div class="grid grid-cols-2 gap-4">
+                            <input type="tel" id="staff-1-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                            <input type="email" id="staff-1-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
+                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Admin Staff 2</p>
+                        <input type="text" id="staff-2-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <div class="grid grid-cols-2 gap-4">
+                            <input type="tel" id="staff-2-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                            <input type="email" id="staff-2-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        </div>
+                    </div>
+                    <button onclick="window.submitAdminSignup()" class="w-full mt-2 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Register Estate</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+            await window.captureEstateLocation(true);
+        };
+
+        window.captureEstateLocation = async function(silent = false) {
+            const gpsField = document.getElementById('estate-gps');
+            if (!gpsField || !navigator.geolocation) {
+                if (!silent) window.showToast('Location services are not available');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const { latitude, longitude } = position.coords;
+                    gpsField.value = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                    if (!silent) window.showToast('GPS captured');
+                },
+                () => {
+                    if (!silent) window.showToast('Allow location access to capture GPS');
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        };
+
+        window.submitAdminSignup = async function() {
+            const estateName = document.getElementById('estate-name')?.value;
+            const address = document.getElementById('estate-address')?.value;
+            const gpsLocation = document.getElementById('estate-gps')?.value;
+            const email = document.getElementById('estate-email')?.value;
+            const phone = document.getElementById('estate-phone')?.value;
+            const password = document.getElementById('estate-password')?.value;
+            const staffMembers = [
+                {
+                    name: document.getElementById('staff-1-name')?.value,
+                    phone: document.getElementById('staff-1-phone')?.value,
+                    email: document.getElementById('staff-1-email')?.value
+                },
+                {
+                    name: document.getElementById('staff-2-name')?.value,
+                    phone: document.getElementById('staff-2-phone')?.value,
+                    email: document.getElementById('staff-2-email')?.value
+                }
+            ].filter(staff => toStr(staff.name) || toStr(staff.phone) || toStr(staff.email));
+
+            if (!estateName || !address || !email || !phone || !password || !staffMembers.length) {
+                return window.showToast('Please complete the estate and staff details');
+            }
+
+            const passwordHash = await hashPassword(password);
+            const signupPayload = {
+                id: generateId(),
+                estateName,
+                address,
+                gpsLocation: gpsLocation || '',
+                email,
+                phone,
+                passwordHash,
+                adminStaff: staffMembers,
+                status: 'active',
+                createdAt: new Date().toISOString()
+            };
+
+            await createEstateSignup(signupPayload);
+            document.getElementById('login-email').value = email;
+            document.getElementById('login-pass').value = password;
+            window.closeModal();
+            window.showToast('Estate account created. You can now sign in.');
         };
 
         window.renderNav = function() {
