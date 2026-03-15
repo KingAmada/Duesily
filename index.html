@@ -83,17 +83,6 @@
         .pulse-ring {
             animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
         }
-        .network-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 999px;
-            background: #10b981;
-            box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
-        }
-        .network-dot.offline {
-            background: #f59e0b;
-            box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
-        }
         @keyframes pulse-ring {
             0% { transform: scale(0.8); opacity: 0.5; }
             100% { transform: scale(2.5); opacity: 0; }
@@ -134,12 +123,12 @@
             <p id="login-form-subtitle" class="hidden text-xs text-gray-500 text-center -mt-3 mb-6">Sign in with an estate admin email or staff contact.</p>
             <div class="space-y-4 mb-6 text-left">
                 <div>
-                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Email Address</label>
-                    <input type="email" id="login-email" placeholder="you@example.com" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all" value="demo@duesily.com">
+                    <label id="login-id-label" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Email or Phone</label>
+                    <input type="text" id="login-email" placeholder="you@example.com" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all">
                 </div>
                 <div>
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Password</label>
-                    <input type="password" id="login-pass" placeholder="••••••••" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all" value="password123">
+                    <input type="password" id="login-pass" placeholder="••••••••" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all">
                 </div>
             </div>
             <button id="login-submit-btn" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm mb-4">Sign In</button>
@@ -232,29 +221,19 @@
                 <p class="text-sm text-gray-400" id="welcome-text">Good morning,</p>
                 <h2 class="text-xl font-bold" id="user-name">Loading...</h2>
             </div>
-            <!-- Clickable Profile Avatar -->
-            <div class="relative cursor-pointer group" onclick="window.switchTab('profile')">
-                <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-transparent group-hover:border-indigo-600 transition-all shadow-sm">
-                    <img id="user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Resident" alt="Avatar">
-                </div>
-                <div class="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 border-2 border-white rounded-full"></div>
-            </div>
-        </header>
-
-        <div class="px-6 pt-2">
-            <div class="white-card px-4 py-3 flex items-center justify-between gap-4 border border-gray-100">
-                <div class="flex items-center gap-3 min-w-0">
-                    <span id="network-indicator" class="network-dot"></span>
-                    <div class="min-w-0">
-                        <p id="network-label" class="text-xs font-bold text-gray-800">Connected</p>
-                        <p id="network-subtext" class="text-[10px] text-gray-400 font-medium truncate">Live sync is active</p>
-                    </div>
-                </div>
+            <div class="flex items-center gap-3">
                 <button id="install-app-btn" class="hidden shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">
                     Install App
                 </button>
+                <!-- Clickable Profile Avatar -->
+                <div class="relative cursor-pointer group" onclick="window.switchTab('profile')">
+                    <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-transparent group-hover:border-indigo-600 transition-all shadow-sm">
+                        <img id="user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Resident" alt="Avatar">
+                    </div>
+                    <div class="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 border-2 border-white rounded-full"></div>
+                </div>
             </div>
-        </div>
+        </header>
 
         <!-- Dynamic Content -->
         <main id="main-content" class="px-6 space-y-6">
@@ -295,9 +274,11 @@
 
         let supabase = null;
         let deferredInstallPrompt = null;
+        let realtimeChannel = null;
         const chartStore = {};
         const ESTATE_SIGNUPS_TABLE = 'duesily_estate_signups';
         const LOCAL_SIGNUPS_KEY = 'duesily_estate_signups_local';
+        const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns'];
 
         // Global Production App State (Completely Empty Initial State)
         const state = {
@@ -316,7 +297,10 @@
             residents: [],
             polls: [],
             campaigns: [],
-            currentResidentId: 1,
+            currentResidentId: null,
+            currentAdminSession: null,
+            currentEstateId: null,
+            currentEstateRecord: null,
             isOffline: !navigator.onLine
         };
 
@@ -327,12 +311,6 @@
                     throw new Error('Missing Duesily Supabase configuration. Update config.js before deploying.');
                 }
                 supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                
-                // Fetch existing data
-                await fetchInitialData();
-                // Setup realtime sync
-                setupRealtimeListeners();
-                
                 hideLoader();
             } catch (err) {
                 console.error("Supabase Initialization Error:", err);
@@ -358,6 +336,13 @@
             polls: [],
             campaigns: []
         };
+
+        function clearTenantCollections() {
+            Object.keys(defaultRows).forEach(key => {
+                state[key] = [...defaultRows[key]];
+            });
+            state.totalBalance = 0;
+        }
 
         function destroyChart(key) {
             if (chartStore[key]) {
@@ -399,6 +384,11 @@
 
         function normalizePhone(value) {
             return String(value || '').replace(/\D/g, '');
+        }
+
+        function getLastFourDigits(value) {
+            const digits = normalizePhone(value);
+            return digits.slice(-4);
         }
 
         function escapeHtml(value) {
@@ -486,22 +476,75 @@
             return sanitizeForState(data);
         }
 
+        async function fetchEstateRecordById(estateId) {
+            const normalizedEstateId = toStr(estateId);
+            if (!normalizedEstateId) return null;
+
+            const signups = await fetchEstateSignups();
+            return signups.find(signup => normalizeId(signup.id) === normalizeId(normalizedEstateId)) || null;
+        }
+
+        async function fetchResidentDirectoryForLogin() {
+            if (!supabase) return sanitizeCollection(state.residents);
+
+            const { data, error } = await supabase
+                .from('duesily_residents')
+                .select('id,name,email,phone,passwordHash,estateId,status,paymentStatus')
+                .order('id', { ascending: false });
+
+            if (error) {
+                console.error('Failed to fetch resident directory for login:', error);
+                return [];
+            }
+
+            return sanitizeCollection(data);
+        }
+
         async function findAdminAccount(loginId) {
             const signups = await fetchEstateSignups();
             const normalizedLogin = toStr(loginId).toLowerCase();
+            const normalizedPhone = normalizePhone(loginId);
 
-            return signups.find(signup => {
+            for (const signup of signups) {
                 const estateEmail = toStr(signup.email).toLowerCase();
                 const estatePhone = normalizePhone(signup.phone);
                 const staffMembers = Array.isArray(signup.adminStaff) ? signup.adminStaff : [];
 
-                if (estateEmail === normalizedLogin || estatePhone === normalizePhone(loginId)) return true;
+                if (estateEmail === normalizedLogin || estatePhone === normalizedPhone) {
+                    return {
+                        account: signup,
+                        staff: {
+                            name: 'Estate Management',
+                            email: signup.email,
+                            phone: signup.phone
+                        }
+                    };
+                }
 
-                return staffMembers.some(staff => {
+                const matchedStaff = staffMembers.find(staff => {
                     const staffEmail = toStr(staff.email).toLowerCase();
                     const staffPhone = normalizePhone(staff.phone);
-                    return staffEmail === normalizedLogin || staffPhone === normalizePhone(loginId);
+                    return staffEmail === normalizedLogin || staffPhone === normalizedPhone;
                 });
+
+                if (matchedStaff) {
+                    return {
+                        account: signup,
+                        staff: matchedStaff
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        async function findResidentAccount(loginId) {
+            const normalizedLogin = toStr(loginId).toLowerCase();
+            const residents = state.residents.length ? state.residents : await fetchResidentDirectoryForLogin();
+            return residents.find(resident => {
+                const residentEmail = toStr(resident.email).toLowerCase();
+                const residentPhone = normalizePhone(resident.phone);
+                return residentEmail === normalizedLogin || residentPhone === normalizePhone(loginId);
             }) || null;
         }
 
@@ -513,10 +556,36 @@
             return state.userType === 'admin' ? 0 : state.currentResidentId;
         }
 
+        function getCurrentResidentName() {
+            const resident = getCurrentResident();
+            return resident?.name || 'Resident';
+        }
+
+        function getCurrentAdminSession() {
+            return state.currentAdminSession || null;
+        }
+
+        function getCurrentEstateId() {
+            return normalizeId(state.currentEstateId);
+        }
+
+        function getCurrentEstateName() {
+            return state.currentEstateRecord?.estateName || getCurrentAdminSession()?.account?.estateName || 'Duesily Estate';
+        }
+
+        function withCurrentEstate(record) {
+            return {
+                ...record,
+                estateId: getCurrentEstateId()
+            };
+        }
+
         async function refreshTableData(stateKey) {
             if (!supabase) return defaultRows[stateKey] || [];
             const table = entityTableMap[stateKey];
             if (!table) return defaultRows[stateKey] || [];
+            const estateId = getCurrentEstateId();
+            if (!estateId) return defaultRows[stateKey] || [];
 
             const orderColumn = {
                 duesily_incomes: 'date',
@@ -527,7 +596,11 @@
                 duesily_campaigns: 'ends'
             }[table] || 'id';
 
-            const { data, error } = await supabase.from(table).select('*').order(orderColumn, { ascending: false });
+            const { data, error } = await supabase
+                .from(table)
+                .select('*')
+                .eq('estateId', estateId)
+                .order(orderColumn, { ascending: false });
             if (error) {
                 console.error(`Failed to refresh ${table}:`, error);
                 return defaultRows[stateKey] || [];
@@ -567,6 +640,13 @@
         }
 
         async function fetchInitialData() {
+            const estateId = getCurrentEstateId();
+            if (!estateId) {
+                clearTenantCollections();
+                updateGlobalState();
+                return;
+            }
+
             const tableOrderColumns = {
                 duesily_incomes: 'date',
                 duesily_expenses: 'date',
@@ -578,7 +658,11 @@
 
             const fetchTable = async (table, stateKey) => {
                 const orderColumn = tableOrderColumns[table] || 'id';
-                const { data, error } = await supabase.from(table).select('*').order(orderColumn, { ascending: false });
+                const { data, error } = await supabase
+                    .from(table)
+                    .select('*')
+                    .eq('estateId', estateId)
+                    .order(orderColumn, { ascending: false });
 
                 if (error) {
                     console.error(`Failed to fetch ${table}:`, error);
@@ -600,7 +684,16 @@
         }
 
         // --- Real-time Cloud Listeners (Supabase Channels) ---
+        async function teardownRealtimeListeners() {
+            if (!supabase || !realtimeChannel) return;
+            await supabase.removeChannel(realtimeChannel);
+            realtimeChannel = null;
+        }
+
         function setupRealtimeListeners() {
+            const estateId = getCurrentEstateId();
+            if (!supabase || !estateId) return;
+
             const handlePayload = (payload, stateKey) => {
                 if (payload.eventType === 'INSERT') {
                     upsertLocalRecord(stateKey, payload.new);
@@ -612,11 +705,15 @@
                 updateGlobalState();
             };
 
-            const channel = supabase.channel('schema-db-changes');
+            const channel = supabase.channel(`schema-db-changes-${estateId}`);
             
-            ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns'].forEach(table => {
+            TENANT_TABLES.forEach(table => {
                 const stateKey = table.replace('duesily_', '');
-                channel.on('postgres_changes', { event: '*', schema: 'public', table: table }, payload => handlePayload(payload, stateKey));
+                channel.on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table, filter: `estateId=eq.${estateId}` },
+                    payload => handlePayload(payload, stateKey)
+                );
             });
 
             channel.subscribe(status => {
@@ -624,6 +721,23 @@
                     console.error('Realtime channel subscription failed.');
                 }
             });
+            realtimeChannel = channel;
+        }
+
+        async function loadEstateContext(estateId, { residentId = null, adminSession = null, estateRecord = null } = {}) {
+            const normalizedEstateId = normalizeId(estateId);
+            if (!normalizedEstateId) {
+                throw new Error('Estate context could not be resolved');
+            }
+
+            state.currentEstateId = normalizedEstateId;
+            state.currentEstateRecord = estateRecord || await fetchEstateRecordById(normalizedEstateId);
+            state.currentAdminSession = adminSession;
+            if (residentId) state.currentResidentId = residentId;
+
+            await fetchInitialData();
+            await teardownRealtimeListeners();
+            setupRealtimeListeners();
         }
 
         function updateGlobalState() {
@@ -668,6 +782,14 @@
             document.getElementById('login-form-title').innerText = type === 'admin' ? 'Admin Secure Login' : 'Resident Portal Login';
             document.getElementById('login-form-subtitle').classList.toggle('hidden', type !== 'admin');
             document.getElementById('admin-signup-btn').classList.toggle('hidden', type !== 'admin');
+            const emailInput = document.getElementById('login-email');
+            const passwordInput = document.getElementById('login-pass');
+            const loginIdLabel = document.getElementById('login-id-label');
+            loginIdLabel.innerText = type === 'admin' ? 'Email or Phone' : 'Resident Email or Phone';
+            emailInput.placeholder = type === 'admin' ? 'Email or Phone' : 'Resident Email or Phone';
+            passwordInput.placeholder = type === 'admin' ? 'Password' : 'Resident Password';
+            emailInput.value = '';
+            passwordInput.value = '';
             document.getElementById('role-selection').classList.add('hidden');
             
             const formContainer = document.getElementById('login-form-container');
@@ -691,19 +813,32 @@
             if(!email || !pass) return window.showToast("Please enter credentials");
 
             if (type === 'admin') {
-                const account = await findAdminAccount(email);
-                if (!account) return window.showToast('Estate admin account not found');
+                const adminMatch = await findAdminAccount(email);
+                if (!adminMatch?.account) return window.showToast('Estate admin account not found');
 
                 const passwordHash = await hashPassword(pass);
-                if (passwordHash !== account.passwordHash) return window.showToast('Invalid admin credentials');
+                if (passwordHash !== adminMatch.account.passwordHash) return window.showToast('Invalid admin credentials');
 
                 window.showToast("Authenticating securely...");
-                setTimeout(() => window.login(type, account), 800);
+                setTimeout(() => window.login(type, adminMatch), 800);
                 return;
             }
 
+            const residentAccount = await findResidentAccount(email);
+            if (!residentAccount) return window.showToast('Resident account not found');
+            if (!residentAccount.estateId) return window.showToast('Resident is not assigned to an estate');
+
+            if (!residentAccount.passwordHash) {
+                return window.showToast('Resident password has not been set for this account');
+            }
+
+            const passwordHash = await hashPassword(pass);
+            if (passwordHash !== residentAccount.passwordHash) {
+                return window.showToast('Invalid resident credentials');
+            }
+
             window.showToast("Authenticating securely...");
-            setTimeout(() => window.login(type), 800);
+            setTimeout(() => window.login(type, null, residentAccount), 800);
         };
 
         window.logout = function() {
@@ -711,24 +846,42 @@
             setTimeout(() => {
                 document.getElementById('app-container').classList.add('hidden');
                 document.getElementById('login-view').classList.remove('hidden');
+                document.getElementById('welcome-text').innerText = 'Good morning,';
+                document.getElementById('user-name').innerText = 'Loading...';
+                state.currentAdminSession = null;
+                state.currentEstateId = null;
+                state.currentEstateRecord = null;
+                state.currentResidentId = null;
+                clearTenantCollections();
+                teardownRealtimeListeners();
                 window.hideLogin();
                 window.scrollTo(0,0);
                 if(window.nigeriaMap) window.nigeriaMap.invalidateSize();
             }, 800);
         };
 
-        window.login = function(type, adminAccount = null) {
+        window.login = async function(type, adminSession = null, residentAccount = null) {
             state.userType = type;
             
-            // Determine name and avatar based on real DB data if possible (using Resident ID 1 for mock resident auth flow)
-            let userName = 'System Manager';
-            if (type === 'resident') {
-                const residentData = getCurrentResident();
-                userName = residentData ? residentData.name : 'Resident User';
-            } else if (adminAccount) {
-                userName = adminAccount.estateName || adminAccount.name || 'Estate Admin';
+            if (residentAccount) {
+                state.currentResidentId = residentAccount.id;
             }
 
+            let userName = 'System Manager';
+            let welcomeLabel = 'Good morning,';
+            if (type === 'resident') {
+                const residentData = residentAccount || getCurrentResident();
+                userName = residentData ? residentData.name : 'Resident User';
+                state.currentAdminSession = null;
+                await loadEstateContext(residentData?.estateId, { residentId: residentData?.id });
+                welcomeLabel = getCurrentEstateName();
+            } else if (adminSession?.account) {
+                await loadEstateContext(adminSession.account.id, { adminSession, estateRecord: adminSession.account });
+                userName = adminSession.staff?.name || 'Estate Staff';
+                welcomeLabel = getCurrentEstateName();
+            }
+
+            document.getElementById('welcome-text').innerText = welcomeLabel;
             document.getElementById('user-name').innerText = userName;
             document.getElementById('user-avatar').src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${userName.replace(' ', '')}`;
             document.getElementById('login-view').classList.add('hidden');
@@ -866,7 +1019,6 @@
         };
 
         window.getMyRecords = function() {
-            // Using ID '1' as the mocked logged-in resident
             let records = state.incomes.filter(c => normalizeId(c.residentId) === normalizeId(getCurrentResidentId())).map(i => ({...i}));
             records.sort((a,b) => new Date(b.date) - new Date(a.date));
 
@@ -963,7 +1115,9 @@
         };
 
         window.openPaymentModal = function() {
-            const accNum = "5770" + Math.floor(100000 + Math.random() * 900000);
+            const estateRecord = state.currentEstateRecord || {};
+            const accNum = toStr(estateRecord.walletAccountNumber) || "5770" + Math.floor(100000 + Math.random() * 900000);
+            const accountName = toStr(estateRecord.accountName) || getCurrentEstateName();
             const content = `
                 <div class="text-center">
                     <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-sm">
@@ -979,7 +1133,7 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Account Name</p>
-                            <p class="font-bold text-gray-800">Duesily Estate Management</p>
+                            <p class="font-bold text-gray-800">${accountName}</p>
                         </div>
                         <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
                             <div>
@@ -1469,9 +1623,11 @@
             
             profile: () => {
                 const residentData = getCurrentResident() || { name: 'Resident User', email: '', phone: '' };
-                const userName = state.userType === 'admin' ? 'System Manager' : residentData.name;
-                const userEmail = state.userType === 'admin' ? 'admin@duesily.com' : residentData.email;
-                const userPhone = state.userType === 'admin' ? '+234 800 000 0000' : residentData.phone;
+                const adminSession = getCurrentAdminSession();
+                const userName = state.userType === 'admin' ? (adminSession?.staff?.name || 'Estate Staff') : residentData.name;
+                const userEmail = state.userType === 'admin' ? (adminSession?.staff?.email || adminSession?.account?.email || '') : residentData.email;
+                const userPhone = state.userType === 'admin' ? (adminSession?.staff?.phone || adminSession?.account?.phone || '') : residentData.phone;
+                const estateName = adminSession?.account?.estateName || 'Estate Admin';
 
                 return `
                 <h3 class="font-bold text-2xl text-gray-800 mb-6">My Profile</h3>
@@ -1482,14 +1638,20 @@
                      </div>
                      <div>
                         <h2 class="text-xl font-bold">${userName}</h2>
-                        <p class="text-sm text-gray-400 mt-1">${state.userType === 'admin' ? 'Administrative Access' : 'RESIDENT'}</p>
+                        <p class="text-sm text-gray-400 mt-1">${state.userType === 'admin' ? estateName : 'RESIDENT'}</p>
                      </div>
                 </div>
 
                 <h4 class="font-bold text-gray-800 mb-4 px-2">Account Details</h4>
                 <div class="space-y-4 mb-8">
+                    ${state.userType === 'admin' ? `
                     <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Full Name</label>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Estate Name</label>
+                        <input type="text" value="${estateName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                    </div>
+                    ` : ''}
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">${state.userType === 'admin' ? 'Staff Name' : 'Full Name'}</label>
                         <input type="text" value="${userName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
                     </div>
                     <div>
@@ -1947,6 +2109,9 @@
                     <input type="text" id="res-street" placeholder="Street Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
                     <input type="tel" id="res-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
                     <input type="email" id="res-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <div class="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-2xl px-4 py-3 text-xs font-bold">
+                        Resident login password will be the last 4 digits of their phone number.
+                    </div>
                     
                     <button onclick="window.saveResident()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Add to Directory</button>
                 </div>
@@ -1979,8 +2144,9 @@
         };
 
         window.confirmPayment = async () => {
+            const residentName = getCurrentResidentName();
             if(!supabase) {
-                upsertLocalRecord('incomes', { id: generateId(), residentId: getCurrentResidentId(), title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' });
+                upsertLocalRecord('incomes', withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: residentName, date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: residentName }));
                 updateGlobalState();
                 window.showToast('Payment submitted for verification!');
                 window.closeModal();
@@ -1988,7 +2154,7 @@
                 return;
             }
 
-            const paymentPayload = { id: generateId(), residentId: getCurrentResidentId(), title: 'Resident 042', date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: 'Resident 042' };
+            const paymentPayload = withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: residentName, date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: residentName });
             const result = await runMutation(
                 async () => supabase.from('duesily_incomes').insert([paymentPayload]),
                 'Payment submitted for verification!',
@@ -2017,7 +2183,7 @@
                 if (choice === 'agree') updates.agree = poll.agree + 1;
                 else updates.disagree = poll.disagree + 1;
                 
-                const { data, error } = await supabase.from('duesily_polls').update(updates).eq('id', id).select().single();
+                const { data, error } = await supabase.from('duesily_polls').update(updates).eq('id', id).eq('estateId', getCurrentEstateId()).select().single();
                 if (error) {
                     console.error('Failed to record vote:', error);
                     return window.showToast('Could not record vote');
@@ -2038,7 +2204,7 @@
 
             if(!supabase) {
                 state.totalBalance -= amount;
-                upsertLocalRecord('expenses', { id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
+                upsertLocalRecord('expenses', withCurrentEstate({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText }));
                 const vendor = state.vendors.find(v => v.id === vendorId);
                 if(vendor) {
                     vendor.transactions = sanitizeForState([{ date: new Date().toISOString(), amount, desc: title }, ...(vendor.transactions || [])]);
@@ -2050,7 +2216,7 @@
                 return;
             }
 
-            const expensePayload = { id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText };
+            const expensePayload = withCurrentEstate({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
             const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
             if (expenseInsert.error) {
                 console.error('Failed to log disbursement:', expenseInsert.error);
@@ -2060,7 +2226,7 @@
             const vendor = state.vendors.find(v => v.id === vendorId);
             if(vendor) {
                 const trans = [{ date: new Date().toISOString(), amount, desc: title }, ...(vendor.transactions || [])];
-                const vendorUpdate = await supabase.from('duesily_vendors').update({ transactions: trans }).eq('id', vendorId).select().single();
+                const vendorUpdate = await supabase.from('duesily_vendors').update({ transactions: trans }).eq('id', vendorId).eq('estateId', getCurrentEstateId()).select().single();
                 if (vendorUpdate.error) {
                     console.error('Failed to update vendor transactions:', vendorUpdate.error);
                 } else {
@@ -2081,7 +2247,7 @@
             if(!title || !date) return window.showToast("Please provide title and dateline");
 
             if(!supabase) {
-                upsertLocalRecord('polls', { id: generateId(), title, description: desc, totalResidents: 300, agree: 0, disagree: 0, ends: date, status: 'active', voted: false });
+                upsertLocalRecord('polls', withCurrentEstate({ id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false }));
                 updateGlobalState();
                 window.showToast('Project Published!');
                 window.closeModal();
@@ -2089,7 +2255,7 @@
                 return;
             }
 
-            const pollPayload = { id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false };
+            const pollPayload = withCurrentEstate({ id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false });
             const { data, error } = await supabase.from('duesily_polls').insert([pollPayload]).select().single();
             if (error) {
                 console.error('Failed to publish poll:', error);
@@ -2113,7 +2279,7 @@
             if(!title || !target || !date) return window.showToast("Provide title, target & dateline");
 
             if(!supabase) {
-                upsertLocalRecord('campaigns', { id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 });
+                upsertLocalRecord('campaigns', withCurrentEstate({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 }));
                 updateGlobalState();
                 window.showToast('Funding Project Launched!');
                 window.closeModal();
@@ -2121,7 +2287,7 @@
                 return;
             }
 
-            const campaignPayload = { id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 };
+            const campaignPayload = withCurrentEstate({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 });
             const { data, error } = await supabase.from('duesily_campaigns').insert([campaignPayload]).select().single();
             if (error) {
                 console.error('Failed to launch campaign:', error);
@@ -2153,7 +2319,8 @@
                     campaign.contributors += 1;
                     campaign.status = stat;
                     campaign.ends = endDt;
-                    upsertLocalRecord('incomes', { id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' });
+                    const residentName = getCurrentResidentName();
+                    upsertLocalRecord('incomes', withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : residentName, category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : residentName, status: 'completed' }));
                     state.totalBalance += amount;
                     window.showToast("Contribution Successful!");
                     window.closeModal();
@@ -2161,13 +2328,14 @@
                     return;
                 }
 
-                const campaignUpdate = await supabase.from('duesily_campaigns').update({ raisedAmount: rAmt, contributors: campaign.contributors + 1, status: stat, ends: endDt }).eq('id', id).select().single();
+                const campaignUpdate = await supabase.from('duesily_campaigns').update({ raisedAmount: rAmt, contributors: campaign.contributors + 1, status: stat, ends: endDt }).eq('id', id).eq('estateId', getCurrentEstateId()).select().single();
                 if (campaignUpdate.error) {
                     console.error('Failed to update campaign:', campaignUpdate.error);
                     return window.showToast('Could not update contribution');
                 }
 
-                const incomePayload = { id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : 'Resident 042', category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : 'Resident 042', status: 'completed' };
+                const residentName = getCurrentResidentName();
+                const incomePayload = withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : residentName, category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : residentName, status: 'completed' });
                 const incomeInsert = await supabase.from('duesily_incomes').insert([incomePayload]).select().single();
                 if (incomeInsert.error) {
                     console.error('Failed to record contribution income:', incomeInsert.error);
@@ -2190,18 +2358,23 @@
             const phone = document.getElementById('res-phone').value;
             const email = document.getElementById('res-email').value;
 
-            if(!name || !house || !street || !phone) return window.showToast('Fill required fields');
+            const defaultPassword = getLastFourDigits(phone);
+            if(!name || !house || !street || !phone || defaultPassword.length < 4) {
+                return window.showToast('Fill required fields and enter a valid phone number');
+            }
+            const passwordHash = await hashPassword(defaultPassword);
             
             if(!supabase) {
-                upsertLocalRecord('residents', { id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' });
+                upsertLocalRecord('residents', withCurrentEstate({ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due', passwordHash }));
                 updateGlobalState();
-                window.showToast('Resident Registered!');
+                window.showToast(`Resident registered. Default password: ${defaultPassword}`);
                 window.closeModal();
                 if(state.activeTab === 'manage') window.switchTab('manage');
                 return;
             }
 
-            const { data, error } = await supabase.from('duesily_residents').insert([{ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due' }]).select().single();
+            const residentPayload = withCurrentEstate({ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due', passwordHash });
+            const { data, error } = await supabase.from('duesily_residents').insert([residentPayload]).select().single();
             if (error) {
                 console.error('Failed to create resident:', error);
                 return window.showToast('Could not register resident');
@@ -2209,7 +2382,7 @@
 
             upsertLocalRecord('residents', data);
             updateGlobalState();
-            window.showToast('Resident Registered!');
+            window.showToast(`Resident registered. Default password: ${defaultPassword}`);
             window.closeModal();
         };
 
@@ -2224,7 +2397,7 @@
             if(!name || !contact) return window.showToast('Fill vendor name and phone');
             
             if(!supabase) {
-                upsertLocalRecord('vendors', { id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] });
+                upsertLocalRecord('vendors', withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }));
                 updateGlobalState();
                 window.showToast('Vendor Added!');
                 window.closeModal();
@@ -2232,7 +2405,7 @@
                 return;
             }
 
-            const { data, error } = await supabase.from('duesily_vendors').insert([{ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }]).select().single();
+            const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] })]).select().single();
             if (error) {
                 console.error('Failed to create vendor:', error);
                 return window.showToast('Could not add vendor');
