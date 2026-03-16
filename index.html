@@ -35,12 +35,16 @@
             background: white;
             border-radius: 24px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+            transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease, background-color 0.28s ease;
         }
         .nav-item.active {
             color: var(--primary);
         }
         .nav-item.active .icon-box {
             background-color: #f0f1ff;
+        }
+        .nav-item {
+            transition: transform 0.24s ease, color 0.24s ease;
         }
         .hide-scroll::-webkit-scrollbar {
             display: none;
@@ -93,6 +97,38 @@
             max-width: 38vw;
             height: auto;
             display: block;
+        }
+        .interactive-text {
+            transition: color 0.24s ease, letter-spacing 0.24s ease, transform 0.24s ease;
+        }
+        .estate-switch-card {
+            transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease;
+        }
+        @media (hover: hover) {
+            .white-card:hover,
+            .estate-switch-card:hover {
+                transform: translateY(-6px);
+                box-shadow: 0 14px 36px rgba(79, 70, 229, 0.12);
+                border-color: rgba(99, 102, 241, 0.18);
+            }
+            button:hover,
+            a:hover,
+            .nav-item:hover {
+                transform: translateY(-2px);
+            }
+            h1:hover,
+            h2:hover,
+            h3:hover,
+            h4:hover,
+            .interactive-text:hover {
+                color: #312e81;
+                letter-spacing: 0.01em;
+            }
+            .app-brandmark:hover,
+            .brand-wordmark:hover {
+                transform: translateY(-2px) scale(1.01);
+                filter: drop-shadow(0 14px 22px rgba(79, 70, 229, 0.12));
+            }
         }
         @keyframes pulse-ring {
             0% { transform: scale(0.8); opacity: 0.5; }
@@ -309,6 +345,8 @@
             currentAdminSession: null,
             currentEstateId: null,
             currentEstateRecord: null,
+            currentResidentMemberships: [],
+            forcePasswordChange: false,
             isOffline: !navigator.onLine
         };
 
@@ -508,6 +546,18 @@
             return sanitizeCollection(data);
         }
 
+        async function hydrateResidentMemberships(residents = []) {
+            const safeResidents = sanitizeCollection(residents);
+            const estateMap = new Map((await fetchEstateSignups()).map(estate => [normalizeId(estate.id), estate]));
+            return safeResidents.map(resident => {
+                const estate = estateMap.get(normalizeId(resident.estateId));
+                return {
+                    ...resident,
+                    estateName: estate?.estateName || 'Duesily Estate'
+                };
+            });
+        }
+
         async function findAdminAccount(loginId) {
             const signups = await fetchEstateSignups();
             const normalizedLogin = toStr(loginId).toLowerCase();
@@ -546,14 +596,14 @@
             return null;
         }
 
-        async function findResidentAccount(loginId) {
+        async function findResidentAccounts(loginId) {
             const normalizedLogin = toStr(loginId).toLowerCase();
-            const residents = state.residents.length ? state.residents : await fetchResidentDirectoryForLogin();
-            return residents.find(resident => {
+            const residents = state.residents.length ? await hydrateResidentMemberships(state.residents) : await hydrateResidentMemberships(await fetchResidentDirectoryForLogin());
+            return residents.filter(resident => {
                 const residentEmail = toStr(resident.email).toLowerCase();
                 const residentPhone = normalizePhone(resident.phone);
                 return residentEmail === normalizedLogin || residentPhone === normalizePhone(loginId);
-            }) || null;
+            });
         }
 
         function getCurrentResident() {
@@ -579,6 +629,10 @@
 
         function getCurrentEstateName() {
             return state.currentEstateRecord?.estateName || getCurrentAdminSession()?.account?.estateName || 'Duesily Estate';
+        }
+
+        function getCurrentResidentMemberships() {
+            return Array.isArray(state.currentResidentMemberships) ? state.currentResidentMemberships : [];
         }
 
         function withCurrentEstate(record) {
@@ -884,6 +938,13 @@
             return value;
         }
 
+        function readCheckboxField(id, message) {
+            const input = document.getElementById(id);
+            if (!input?.checked) return flagFieldError(input, message);
+            clearFieldError(input);
+            return true;
+        }
+
         function applyInputGuards(root = document) {
             root.querySelectorAll('[data-phone-input]').forEach(input => {
                 if (input.dataset.guardBound === 'true') return;
@@ -906,6 +967,164 @@
             toast.innerText = msg;
             toast.classList.replace('opacity-0', 'opacity-100');
             setTimeout(() => toast.classList.replace('opacity-100', 'opacity-0'), 2500);
+        };
+
+        async function estateSignupExists({ email = '', phone = '' } = {}) {
+            const estates = await fetchEstateSignups();
+            const emailLower = toStr(email).toLowerCase();
+            const phoneDigits = normalizePhone(phone);
+
+            return estates.some(estate => (
+                (emailLower && toStr(estate.email).toLowerCase() === emailLower) ||
+                (phoneDigits && normalizePhone(estate.phone) === phoneDigits)
+            ));
+        }
+
+        async function residentExistsInEstate({ phone = '', estateId = '' } = {}) {
+            const normalizedPhone = normalizePhone(phone);
+            const normalizedEstateId = normalizeId(estateId);
+            if (!normalizedPhone || !normalizedEstateId) return false;
+
+            if (!supabase) {
+                return state.residents.some(resident =>
+                    normalizeId(resident.estateId) === normalizedEstateId &&
+                    normalizePhone(resident.phone) === normalizedPhone
+                );
+            }
+
+            const { data, error } = await supabase
+                .from('duesily_residents')
+                .select('id')
+                .eq('estateId', normalizedEstateId)
+                .eq('phone', normalizedPhone)
+                .limit(1);
+
+            if (error) {
+                console.error('Failed to validate resident duplicate:', error);
+                throw new Error('Could not validate resident record');
+            }
+
+            return Array.isArray(data) && data.length > 0;
+        }
+
+        function getLegalDocument(type) {
+            const docs = {
+                terms: {
+                    title: 'Terms & Conditions',
+                    body: `
+                        <p class="text-sm text-gray-600 leading-relaxed">By using Duesily, estates, staff, and residents agree to provide accurate records, protect login credentials, and use the platform only for lawful community management activities.</p>
+                        <p class="text-sm text-gray-600 leading-relaxed mt-4">Payments, project records, votes, and resident directories must reflect real estate operations. Duesily may suspend abusive or fraudulent usage to protect community data and service integrity.</p>
+                    `
+                },
+                privacy: {
+                    title: 'Privacy Statement',
+                    body: `
+                        <p class="text-sm text-gray-600 leading-relaxed">Duesily stores estate, staff, resident, payment, and project information only for service delivery, reporting, and community administration. Sensitive information such as passwords is stored in hashed form.</p>
+                        <p class="text-sm text-gray-600 leading-relaxed mt-4">We limit data exposure inside each estate workspace and only use contact details for operational communication, support, and security verification.</p>
+                    `
+                },
+                faq: {
+                    title: 'FAQ',
+                    body: `
+                        <div class="space-y-4 text-sm text-gray-600">
+                            <div><p class="font-bold text-gray-800">Who can sign in as admin?</p><p>Registered estate staff and the primary estate account can sign in with their approved email or phone.</p></div>
+                            <div><p class="font-bold text-gray-800">How do residents get their first password?</p><p>New residents start with the last 4 digits of their phone number and are prompted to change it after first sign-in.</p></div>
+                            <div><p class="font-bold text-gray-800">Can one person belong to multiple estates?</p><p>Yes. A resident can exist in different estates, but cannot be duplicated twice inside the same estate directory.</p></div>
+                        </div>
+                    `
+                },
+                about: {
+                    title: 'About Us',
+                    body: `
+                        <p class="text-sm text-gray-600 leading-relaxed">Duesily helps estates manage dues, resident records, vendors, voting, and community projects from one tenant-aware workspace.</p>
+                        <p class="text-sm text-gray-600 leading-relaxed mt-4">Our goal is simple: smarter dues collection, clearer accountability, and stronger communities.</p>
+                    `
+                }
+            };
+
+            return docs[type] || docs.about;
+        }
+
+        window.openLegalModal = function(type) {
+            const doc = getLegalDocument(type);
+            document.getElementById('modal-content').innerHTML = `
+                <div class="space-y-5">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-900">${doc.title}</h2>
+                            <p class="text-sm text-gray-500 mt-1">Duesily policy and support information</p>
+                        </div>
+                        <button onclick="window.closeModal()" class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div>${doc.body}</div>
+                    <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold">Close</button>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        window.openSupportModal = function() {
+            document.getElementById('modal-content').innerHTML = `
+                <div class="space-y-5">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-900">Support</h2>
+                        <p class="text-sm text-gray-500 mt-1">Reach the Duesily support team anytime.</p>
+                    </div>
+                    <div class="white-card p-5 border border-gray-100">
+                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Email Support</p>
+                        <a href="mailto:support@duesily.com" class="text-lg font-bold text-indigo-600">support@duesily.com</a>
+                        <p class="text-sm text-gray-600 mt-3">For onboarding help, billing questions, tenant setup, or resident account issues.</p>
+                    </div>
+                    <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold">Close</button>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        window.openResidentPasswordChangeModal = function() {
+            state.forcePasswordChange = true;
+            document.getElementById('modal-content').innerHTML = `
+                <div class="space-y-5">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-900">Change Your Password</h2>
+                        <p class="text-sm text-gray-500 mt-1">For your security, update the default password before continuing.</p>
+                    </div>
+                    <div class="space-y-4">
+                        <input type="password" id="resident-new-password" placeholder="New Password" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" maxlength="64" autocomplete="new-password">
+                        <input type="password" id="resident-confirm-password" placeholder="Confirm New Password" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" maxlength="64" autocomplete="new-password">
+                    </div>
+                    <button onclick="window.submitResidentPasswordChange()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100">Update Password</button>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
+        };
+
+        window.openResidentEstatePicker = function(residentAccounts = [], { title = 'Choose Estate', subtitle = 'Select the estate you want to open.' } = {}) {
+            const options = residentAccounts.filter(Boolean);
+            if (!options.length) return window.showToast('No estate memberships found for this resident');
+
+            document.getElementById('modal-content').innerHTML = `
+                <div class="space-y-5">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-900">${title}</h2>
+                        <p class="text-sm text-gray-500 mt-1">${subtitle}</p>
+                    </div>
+                    <div class="space-y-3">
+                        ${options.map(account => `
+                            <button onclick="window.selectResidentEstate('${escapeHtml(account.id)}')" class="estate-switch-card w-full text-left bg-white border border-gray-100 rounded-[1.5rem] p-5 shadow-sm">
+                                <p class="text-lg font-bold text-gray-900 interactive-text">${account.estateName || 'Unnamed Estate'}</p>
+                                <p class="text-sm text-gray-500 mt-1">${account.name || 'Resident'} • ${account.house ? `House ${account.house}` : 'Resident Record'}</p>
+                                <p class="text-[11px] text-indigo-600 font-bold mt-3 uppercase tracking-wider">Open estate workspace</p>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
         };
 
         // --- Authentication Flow ---
@@ -956,21 +1175,42 @@
                 return;
             }
 
-            const residentAccount = await findResidentAccount(loginId);
-            if (!residentAccount) return window.showToast('Resident account not found');
-            if (!residentAccount.estateId) return window.showToast('Resident is not assigned to an estate');
-
-            if (!residentAccount.passwordHash) {
-                return window.showToast('Resident password has not been set for this account');
-            }
+            const residentMatches = await findResidentAccounts(loginId);
+            if (!residentMatches.length) return window.showToast('Resident account not found');
 
             const passwordHash = await hashPassword(pass);
-            if (passwordHash !== residentAccount.passwordHash) {
+            const validResidentAccounts = residentMatches.filter(account => account.passwordHash === passwordHash);
+            if (!validResidentAccounts.length) {
                 return window.showToast('Invalid resident credentials');
             }
 
+            const preparedAccounts = await Promise.all(validResidentAccounts.map(async (account) => {
+                if (!account.estateId) return null;
+                if (!account.passwordHash) return null;
+                const defaultPasswordHash = await hashPassword(getLastFourDigits(account.phone));
+                return {
+                    ...account,
+                    requiresPasswordChange: account.passwordHash === defaultPasswordHash
+                };
+            }));
+            const residentAccounts = preparedAccounts.filter(Boolean);
+
+            if (!residentAccounts.length) {
+                return window.showToast('Resident password has not been set for this account');
+            }
+
+            state.currentResidentMemberships = residentAccounts;
+
+            if (residentAccounts.length > 1) {
+                window.openResidentEstatePicker(residentAccounts, {
+                    title: 'Choose Your Estate',
+                    subtitle: 'You belong to multiple estates. Pick one to continue.'
+                });
+                return;
+            }
+
             window.showToast("Authenticating securely...");
-            setTimeout(() => window.login(type, null, residentAccount), 800);
+            setTimeout(() => window.login(type, null, residentAccounts[0]), 800);
         };
 
         window.logout = function() {
@@ -984,6 +1224,8 @@
                 state.currentEstateId = null;
                 state.currentEstateRecord = null;
                 state.currentResidentId = null;
+                state.currentResidentMemberships = [];
+                state.forcePasswordChange = false;
                 clearTenantCollections();
                 teardownRealtimeListeners();
                 window.hideLogin();
@@ -1005,6 +1247,15 @@
                 const residentData = residentAccount || getCurrentResident();
                 userName = residentData ? residentData.name : 'Resident User';
                 state.currentAdminSession = null;
+                if (residentData) {
+                    const normalizedResidentId = normalizeId(residentData.id);
+                    state.currentResidentMemberships = getCurrentResidentMemberships().length
+                        ? getCurrentResidentMemberships().map(entry => ({
+                            ...entry,
+                            requiresPasswordChange: normalizeId(entry.id) === normalizedResidentId ? !!residentData.requiresPasswordChange : !!entry.requiresPasswordChange
+                        }))
+                        : [residentData];
+                }
                 await loadEstateContext(residentData?.estateId, { residentId: residentData?.id });
                 welcomeLabel = getCurrentEstateName();
             } else if (adminSession?.account) {
@@ -1020,6 +1271,72 @@
             document.getElementById('app-container').classList.remove('hidden');
             window.renderNav();
             window.switchTab('dashboard');
+
+            if (type === 'resident' && residentAccount?.requiresPasswordChange) {
+                setTimeout(() => window.openResidentPasswordChangeModal(), 250);
+            }
+        };
+
+        window.selectResidentEstate = async function(residentId) {
+            const residentAccount = getCurrentResidentMemberships().find(account => normalizeId(account.id) === normalizeId(residentId));
+            if (!residentAccount) return window.showToast('Estate membership not found');
+            document.getElementById('modal-container').classList.add('hidden');
+            window.showToast('Opening estate workspace...');
+            await window.login('resident', null, residentAccount);
+        };
+
+        window.switchResidentEstate = async function(residentId) {
+            const residentAccount = getCurrentResidentMemberships().find(account => normalizeId(account.id) === normalizeId(residentId));
+            if (!residentAccount) return window.showToast('Estate membership not found');
+            state.currentResidentId = residentAccount.id;
+            await loadEstateContext(residentAccount.estateId, { residentId: residentAccount.id });
+            document.getElementById('welcome-text').innerText = getCurrentEstateName();
+            document.getElementById('user-name').innerText = residentAccount.name || 'Resident User';
+            document.getElementById('user-avatar').src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${(residentAccount.name || 'Resident').replace(' ', '')}`;
+            window.showToast(`Switched to ${residentAccount.estateName || 'selected estate'}`);
+            window.switchTab('profile');
+        };
+
+        window.submitResidentPasswordChange = async function() {
+            const resident = getCurrentResident();
+            if (!resident) return window.showToast('Resident session not found');
+
+            const newPassword = readPasswordField('resident-new-password', 'New password', { min: 6, max: 64 });
+            if (!newPassword) return;
+            const confirmPassword = readPasswordField('resident-confirm-password', 'Confirm password', { min: 6, max: 64 });
+            if (!confirmPassword) return;
+            if (newPassword !== confirmPassword) return flagFieldError(document.getElementById('resident-confirm-password'), 'Passwords do not match');
+            if (newPassword === getLastFourDigits(resident.phone)) {
+                return flagFieldError(document.getElementById('resident-new-password'), 'Choose a password different from the default password');
+            }
+
+            const passwordHash = await hashPassword(newPassword);
+
+            if (!supabase) {
+                resident.passwordHash = passwordHash;
+                state.forcePasswordChange = false;
+                window.closeModal();
+                window.showToast('Password updated successfully');
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('duesily_residents')
+                .update({ passwordHash })
+                .eq('id', resident.id)
+                .eq('estateId', getCurrentEstateId())
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Failed to update resident password:', error);
+                return window.showToast('Could not update password');
+            }
+
+            upsertLocalRecord('residents', data);
+            state.forcePasswordChange = false;
+            window.closeModal();
+            window.showToast('Password updated successfully');
         };
 
         window.openAdminSignup = async function() {
@@ -1056,6 +1373,15 @@
                             <input type="email" id="staff-2-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
                         </div>
                     </div>
+                    <label class="flex items-start gap-3 bg-gray-50 rounded-2xl px-4 py-4 border border-gray-100 cursor-pointer">
+                        <input type="checkbox" id="estate-legal-check" class="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-xs text-gray-600 leading-relaxed">
+                            I have read and accepted the
+                            <button type="button" onclick="window.openLegalModal('terms')" class="font-bold text-indigo-600">T&amp;C</button>
+                            and
+                            <button type="button" onclick="window.openLegalModal('privacy')" class="font-bold text-indigo-600">Privacy Statement</button>.
+                        </span>
+                    </label>
                     <button onclick="window.submitAdminSignup()" class="w-full mt-2 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Register Estate</button>
                 </div>
             `;
@@ -1102,6 +1428,7 @@
             if (!phone) return;
             const password = readPasswordField('estate-password', 'Password', { min: 6, max: 64 });
             if (!password) return;
+            if (!readCheckboxField('estate-legal-check', 'Accept the T&C and Privacy Statement to continue')) return;
 
             const staffMembers = [];
             for (const index of [1, 2]) {
@@ -1131,6 +1458,9 @@
             }
 
             if (!staffMembers.length) return window.showToast('Add at least one valid staff member');
+            if (await estateSignupExists({ email, phone })) {
+                return window.showToast('An estate account with this email or phone already exists');
+            }
 
             const passwordHash = await hashPassword(password);
             const signupPayload = {
@@ -1783,7 +2113,10 @@
                 const userName = state.userType === 'admin' ? (adminSession?.staff?.name || 'Estate Staff') : residentData.name;
                 const userEmail = state.userType === 'admin' ? (adminSession?.staff?.email || adminSession?.account?.email || '') : residentData.email;
                 const userPhone = state.userType === 'admin' ? (adminSession?.staff?.phone || adminSession?.account?.phone || '') : residentData.phone;
-                const estateName = adminSession?.account?.estateName || 'Estate Admin';
+                const estateName = state.userType === 'admin'
+                    ? (adminSession?.account?.estateName || 'Estate Admin')
+                    : getCurrentEstateName();
+                const residentMemberships = getCurrentResidentMemberships();
 
                 return `
                 <h3 class="font-bold text-2xl text-gray-800 mb-6">My Profile</h3>
@@ -1794,7 +2127,7 @@
                      </div>
                      <div>
                         <h2 class="text-xl font-bold">${userName}</h2>
-                        <p class="text-sm text-gray-400 mt-1">${state.userType === 'admin' ? estateName : 'RESIDENT'}</p>
+                        <p class="text-sm text-gray-400 mt-1">${state.userType === 'admin' ? estateName : estateName}</p>
                      </div>
                 </div>
 
@@ -1807,6 +2140,10 @@
                     </div>
                     ` : ''}
                     <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Estate</label>
+                        <input type="text" value="${estateName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                    </div>
+                    <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">${state.userType === 'admin' ? 'Staff Name' : 'Full Name'}</label>
                         <input type="text" value="${userName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
                     </div>
@@ -1818,8 +2155,34 @@
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Phone Number</label>
                         <input type="tel" value="${userPhone}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
                     </div>
+                    ${state.userType === 'resident' ? `
+                    <button onclick="window.openResidentPasswordChangeModal()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Change Password</button>
+                    ${residentMemberships.length > 1 ? `
+                    <button onclick="window.openResidentEstatePicker(window.getCurrentResidentMemberships(), { title: 'Switch Estate', subtitle: 'Choose another estate workspace to view.' })" class="w-full py-4 bg-white text-indigo-700 border border-indigo-100 rounded-2xl font-bold shadow-sm active:scale-95 transition-transform">Switch Estate</button>
+                    ` : ''}
+                    ` : `
                     <button onclick="window.showToast('Profile Updated Successfully!')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Changes</button>
+                    `}
                 </div>
+
+                ${state.userType === 'resident' && residentMemberships.length > 1 ? `
+                    <h4 class="font-bold text-gray-800 mb-4 px-2">My Estates</h4>
+                    <div class="space-y-3 mb-8">
+                        ${residentMemberships.map(account => `
+                            <button onclick="window.switchResidentEstate('${account.id}')" class="estate-switch-card w-full text-left bg-white border ${normalizeId(account.estateId) === getCurrentEstateId() ? 'border-indigo-200 bg-indigo-50/60' : 'border-gray-100'} rounded-[1.5rem] p-4 shadow-sm">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p class="font-bold text-sm text-gray-900">${account.estateName || 'Duesily Estate'}</p>
+                                        <p class="text-[11px] text-gray-500 mt-1">${account.house ? `House ${account.house}` : 'Resident record available'}</p>
+                                    </div>
+                                    <span class="text-[10px] font-bold uppercase tracking-widest ${normalizeId(account.estateId) === getCurrentEstateId() ? 'text-indigo-600' : 'text-gray-400'}">
+                                        ${normalizeId(account.estateId) === getCurrentEstateId() ? 'Current' : 'Switch'}
+                                    </span>
+                                </div>
+                            </button>
+                        `).join('')}
+                    </div>
+                ` : ''}
 
                 ${state.userType === 'resident' ? `
                     <div class="flex justify-between items-center mb-4 px-2">
@@ -1838,6 +2201,26 @@
                         `).join('') : '<p class="text-sm text-gray-400 text-center py-4 border border-dashed rounded-2xl">No personal records found.</p>'}
                     </div>
                 ` : ''}
+
+                <h4 class="font-bold text-gray-800 mb-4 px-2">Help & Info</h4>
+                <div class="grid grid-cols-2 gap-3 mb-8">
+                    <button onclick="window.openLegalModal('about')" class="white-card p-4 text-left border border-transparent hover:border-indigo-100 active:scale-[0.98] transition-all">
+                        <p class="font-bold text-sm text-gray-800 mb-1">About Us</p>
+                        <p class="text-[11px] text-gray-500">What Duesily is about</p>
+                    </button>
+                    <button onclick="window.openLegalModal('faq')" class="white-card p-4 text-left border border-transparent hover:border-indigo-100 active:scale-[0.98] transition-all">
+                        <p class="font-bold text-sm text-gray-800 mb-1">FAQ</p>
+                        <p class="text-[11px] text-gray-500">Quick answers and guidance</p>
+                    </button>
+                    <button onclick="window.openSupportModal()" class="white-card p-4 text-left border border-transparent hover:border-indigo-100 active:scale-[0.98] transition-all">
+                        <p class="font-bold text-sm text-gray-800 mb-1">Support</p>
+                        <p class="text-[11px] text-indigo-600 font-bold">support@duesily.com</p>
+                    </button>
+                    <button onclick="window.openLegalModal('terms')" class="white-card p-4 text-left border border-transparent hover:border-indigo-100 active:scale-[0.98] transition-all">
+                        <p class="font-bold text-sm text-gray-800 mb-1">T &amp; C</p>
+                        <p class="text-[11px] text-gray-500">Terms and conditions</p>
+                    </button>
+                </div>
                 
                 <button onclick="window.logout()" class="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold shadow-sm active:scale-95 transition-transform mb-8">Log Out</button>
             `},
@@ -1910,7 +2293,13 @@
             }, 150);
         };
         
-        window.closeModal = () => document.getElementById('modal-container').classList.add('hidden');
+        window.closeModal = () => {
+            if (state.forcePasswordChange) {
+                window.showToast('Please change your password to continue');
+                return;
+            }
+            document.getElementById('modal-container').classList.add('hidden');
+        };
 
         window.initCharts = () => {
             if (state.activeTab === 'finance') {
@@ -2273,6 +2662,15 @@
                     <div class="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-2xl px-4 py-3 text-xs font-bold">
                         Resident login password will be the last 4 digits of their phone number.
                     </div>
+                    <label class="flex items-start gap-3 bg-gray-50 rounded-2xl px-4 py-4 border border-gray-100 cursor-pointer">
+                        <input type="checkbox" id="resident-legal-check" class="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-xs text-gray-600 leading-relaxed">
+                            I confirm the resident has accepted the
+                            <button type="button" onclick="window.openLegalModal('terms')" class="font-bold text-indigo-600">T&amp;C</button>
+                            and
+                            <button type="button" onclick="window.openLegalModal('privacy')" class="font-bold text-indigo-600">Privacy Statement</button>.
+                        </span>
+                    </label>
                     
                     <button onclick="window.saveResident()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Add to Directory</button>
                 </div>
@@ -2539,10 +2937,19 @@
             if (!phone) return;
             const email = readEmailField('res-email', 'Email address', { required: false });
             if (email === false) return;
+            if (!readCheckboxField('resident-legal-check', 'Confirm T&C and Privacy Statement acceptance before adding this resident')) return;
 
             const defaultPassword = getLastFourDigits(phone);
             if(!name || !house || !street || !phone || defaultPassword.length < 4) {
                 return window.showToast('Fill required fields and enter a valid phone number');
+            }
+            const estateId = getCurrentEstateId();
+            try {
+                if (await residentExistsInEstate({ phone, estateId })) {
+                    return window.showToast('This resident phone number is already registered in this estate');
+                }
+            } catch (error) {
+                return window.showToast(error.message || 'Could not validate resident record');
             }
             const passwordHash = await hashPassword(defaultPassword);
             
