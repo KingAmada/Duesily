@@ -1720,6 +1720,520 @@
             return filtered;
         };
 
+        function getDefaultReportWeek(date = new Date()) {
+            const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = target.getUTCDay() || 7;
+            target.setUTCDate(target.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+            return `${target.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+        }
+
+        function parseWeekValue(value) {
+            const [yearPart, weekPart] = String(value || '').split('-W');
+            const year = Number(yearPart);
+            const week = Number(weekPart);
+            if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
+
+            const simple = new Date(Date.UTC(year, 0, 1 + ((week - 1) * 7)));
+            const dayOfWeek = simple.getUTCDay() || 7;
+            const monday = new Date(simple);
+            if (dayOfWeek <= 4) monday.setUTCDate(simple.getUTCDate() - dayOfWeek + 1);
+            else monday.setUTCDate(simple.getUTCDate() + 8 - dayOfWeek);
+
+            const sunday = new Date(monday);
+            sunday.setUTCDate(monday.getUTCDate() + 6);
+            sunday.setUTCHours(23, 59, 59, 999);
+            monday.setUTCHours(0, 0, 0, 0);
+            return { start: monday, end: sunday };
+        }
+
+        function getReportRange(period, rawValue) {
+            const value = toStr(rawValue);
+            if (period === 'day') {
+                const start = new Date(value || defaultFinanceDate);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(start);
+                end.setHours(23, 59, 59, 999);
+                return { start, end, label: formatDate(start.toISOString()) };
+            }
+
+            if (period === 'week') {
+                const parsedWeek = parseWeekValue(value || getDefaultReportWeek());
+                if (!parsedWeek) return null;
+                return {
+                    start: parsedWeek.start,
+                    end: parsedWeek.end,
+                    label: `${formatDate(parsedWeek.start.toISOString())} - ${formatDate(parsedWeek.end.toISOString())}`
+                };
+            }
+
+            if (period === 'month') {
+                const [year, month] = (value || defaultFinanceMonth).split('-').map(Number);
+                const start = new Date(year, (month || 1) - 1, 1);
+                const end = new Date(year, month || 1, 0, 23, 59, 59, 999);
+                return {
+                    start,
+                    end,
+                    label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                };
+            }
+
+            if (period === 'year') {
+                const year = Number(value || defaultFinanceYear);
+                const start = new Date(year, 0, 1);
+                const end = new Date(year, 11, 31, 23, 59, 59, 999);
+                return { start, end, label: String(year) };
+            }
+
+            return null;
+        }
+
+        function isDateWithinRange(dateLike, range) {
+            const date = new Date(dateLike);
+            if (!range || Number.isNaN(date.getTime())) return false;
+            return date >= range.start && date <= range.end;
+        }
+
+        function getReportScopeData(scope = 'estate') {
+            if (scope === 'personal') {
+                const personalRecords = window.getMyRecords();
+                return {
+                    title: `${getCurrentResidentName()} Personal Report`,
+                    subtitle: `${getCurrentEstateName()} resident payment and contribution summary`,
+                    incomes: personalRecords,
+                    expenses: [],
+                    residents: [getCurrentResident()].filter(Boolean),
+                    vendors: [],
+                    polls: [],
+                    campaigns: [],
+                    scopeLabel: 'Resident Personal Records'
+                };
+            }
+
+            return {
+                title: `${getCurrentEstateName()} Estate Report`,
+                subtitle: `${state.userType === 'admin' ? 'Administrative' : 'Resident'} workspace summary`,
+                incomes: [...state.incomes],
+                expenses: [...state.expenses],
+                residents: [...state.residents],
+                vendors: [...state.vendors],
+                polls: [...state.polls],
+                campaigns: [...state.campaigns],
+                scopeLabel: 'Estate Workspace Data'
+            };
+        }
+
+        function summarizeReportData(scopeData, range) {
+            const incomes = scopeData.incomes.filter(item => isDateWithinRange(item.date, range));
+            const expenses = scopeData.expenses.filter(item => isDateWithinRange(item.date, range));
+            const incomeTotal = incomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+            const expenseTotal = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+            const netTotal = incomeTotal - expenseTotal;
+
+            const categoryTotals = [...incomes, ...expenses].reduce((acc, item) => {
+                const category = toStr(item.category) || 'Uncategorized';
+                acc[category] = (acc[category] || 0) + Number(item.amount || 0);
+                return acc;
+            }, {});
+
+            return {
+                incomes,
+                expenses,
+                incomeTotal,
+                expenseTotal,
+                netTotal,
+                categorySlices: Object.entries(categoryTotals)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5)
+            };
+        }
+
+        function buildReportBarChartSvg({ incomeTotal, expenseTotal, netTotal }) {
+            const values = [
+                { label: 'Income', value: Math.max(0, incomeTotal), color: '#10b981' },
+                { label: 'Expense', value: Math.max(0, expenseTotal), color: '#6366f1' },
+                { label: 'Net', value: Math.max(0, netTotal), color: '#0f172a' }
+            ];
+            const maxValue = Math.max(...values.map(item => item.value), 1);
+            const barWidth = 72;
+            const gap = 38;
+            const chartHeight = 180;
+
+            return `
+                <svg viewBox="0 0 340 240" width="100%" height="240" role="img" aria-label="Report bar chart">
+                    <line x1="28" y1="200" x2="320" y2="200" stroke="#e5e7eb" stroke-width="2" />
+                    ${values.map((item, index) => {
+                        const height = (item.value / maxValue) * chartHeight;
+                        const x = 38 + index * (barWidth + gap);
+                        const y = 200 - height;
+                        return `
+                            <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="20" fill="${item.color}" />
+                            <text x="${x + (barWidth / 2)}" y="${y - 10}" text-anchor="middle" font-size="12" font-weight="700" fill="#475569">${escapeHtml(formatCurrency(item.value))}</text>
+                            <text x="${x + (barWidth / 2)}" y="222" text-anchor="middle" font-size="12" font-weight="700" fill="#64748b">${escapeHtml(item.label)}</text>
+                        `;
+                    }).join('')}
+                </svg>
+            `;
+        }
+
+        function polarToCartesian(centerX, centerY, radius, angleInDegrees) {
+            const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+            return {
+                x: centerX + (radius * Math.cos(angleInRadians)),
+                y: centerY + (radius * Math.sin(angleInRadians))
+            };
+        }
+
+        function describeArc(x, y, radius, startAngle, endAngle) {
+            const start = polarToCartesian(x, y, radius, endAngle);
+            const end = polarToCartesian(x, y, radius, startAngle);
+            const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+            return ['M', start.x, start.y, 'A', radius, radius, 0, largeArcFlag, 0, end.x, end.y].join(' ');
+        }
+
+        function buildReportPieChartSvg(slices = []) {
+            if (!slices.length) {
+                return `
+                    <div style="height:260px;display:flex;align-items:center;justify-content:center;border:1px dashed #cbd5e1;border-radius:24px;color:#64748b;font-weight:600;">
+                        No category data in this period
+                    </div>
+                `;
+            }
+
+            const colors = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#3b82f6'];
+            const total = slices.reduce((sum, [, amount]) => sum + amount, 0) || 1;
+            let angleCursor = 0;
+
+            return `
+                <svg viewBox="0 0 360 260" width="100%" height="260" role="img" aria-label="Report pie chart">
+                    <g transform="translate(0, 4)">
+                        ${slices.map(([label, amount], index) => {
+                            const sliceAngle = (amount / total) * 360;
+                            const startAngle = angleCursor;
+                            const endAngle = angleCursor + sliceAngle;
+                            angleCursor = endAngle;
+                            return `<path d="${describeArc(110, 110, 74, startAngle, endAngle)} L 110 110 Z" fill="${colors[index % colors.length]}"></path>`;
+                        }).join('')}
+                        <circle cx="110" cy="110" r="40" fill="#ffffff"></circle>
+                        <text x="110" y="105" text-anchor="middle" font-size="12" font-weight="700" fill="#64748b">Total</text>
+                        <text x="110" y="125" text-anchor="middle" font-size="14" font-weight="800" fill="#0f172a">${escapeHtml(formatCurrency(total))}</text>
+                    </g>
+                    <g transform="translate(210, 38)">
+                        ${slices.map(([label, amount], index) => `
+                            <g transform="translate(0, ${index * 38})">
+                                <circle cx="0" cy="0" r="6" fill="${colors[index % colors.length]}"></circle>
+                                <text x="16" y="-2" font-size="12" font-weight="700" fill="#334155">${escapeHtml(label)}</text>
+                                <text x="16" y="14" font-size="12" font-weight="600" fill="#64748b">${escapeHtml(formatCurrency(amount))}</text>
+                            </g>
+                        `).join('')}
+                    </g>
+                </svg>
+            `;
+        }
+
+        function buildReportTable(title, rows, columns, emptyMessage = 'No records found') {
+            return `
+                <section class="report-section">
+                    <div class="report-section-header">
+                        <h3>${escapeHtml(title)}</h3>
+                    </div>
+                    ${rows.length ? `
+                        <table class="report-table">
+                            <thead>
+                                <tr>${columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join('')}</tr>
+                            </thead>
+                            <tbody>
+                                ${rows.map(row => `
+                                    <tr>
+                                        ${columns.map(column => `<td>${escapeHtml(column.render(row))}</td>`).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    ` : `<div class="report-empty">${escapeHtml(emptyMessage)}</div>`}
+                </section>
+            `;
+        }
+
+        function generateReportHtml({ scope, range, summary, scopeData }) {
+            const generatedAt = new Date().toLocaleString();
+            const residentsSnapshot = scopeData.residents.slice(0, 10);
+            const vendorsSnapshot = scopeData.vendors.slice(0, 10);
+            const pollsSnapshot = scopeData.polls.slice(0, 6);
+            const campaignsSnapshot = scopeData.campaigns.slice(0, 6);
+
+            return `
+                <!doctype html>
+                <html lang="en">
+                <head>
+                    <meta charset="utf-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1" />
+                    <title>${escapeHtml(scopeData.title)} - ${escapeHtml(range.label)}</title>
+                    <style>
+                        body { font-family: "Avenir Next", "Segoe UI", sans-serif; margin: 0; color: #0f172a; background: #f8fafc; }
+                        .report-shell { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+                        .report-hero { background: linear-gradient(135deg, #0f172a 0%, #4338ca 55%, #818cf8 100%); color: white; border-radius: 32px; padding: 32px; box-shadow: 0 30px 80px rgba(79, 70, 229, 0.25); }
+                        .report-eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 11px; opacity: .8; font-weight: 800; }
+                        .report-title { font-size: 34px; line-height: 1.1; margin: 16px 0 10px; font-weight: 800; }
+                        .report-subtitle { font-size: 14px; line-height: 1.7; opacity: .92; max-width: 700px; }
+                        .report-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+                        .report-pill { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 10px 14px; font-size: 12px; font-weight: 700; }
+                        .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+                        .summary-card, .chart-card, .report-section { background: white; border-radius: 28px; box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06); }
+                        .summary-card { padding: 20px; }
+                        .summary-label { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: #94a3b8; font-weight: 800; }
+                        .summary-value { margin-top: 12px; font-size: 26px; font-weight: 800; color: #0f172a; }
+                        .summary-foot { margin-top: 6px; font-size: 12px; color: #64748b; font-weight: 600; }
+                        .charts-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; margin-bottom: 16px; }
+                        .chart-card { padding: 24px; }
+                        .chart-title { font-size: 12px; text-transform: uppercase; letter-spacing: .14em; color: #94a3b8; font-weight: 800; margin-bottom: 14px; }
+                        .report-section { margin-top: 16px; overflow: hidden; }
+                        .report-section-header { padding: 22px 24px 0; }
+                        .report-section-header h3 { margin: 0; font-size: 18px; font-weight: 800; }
+                        .report-table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+                        .report-table th, .report-table td { padding: 14px 24px; text-align: left; border-top: 1px solid #e2e8f0; font-size: 13px; }
+                        .report-table th { color: #64748b; text-transform: uppercase; letter-spacing: .08em; font-size: 11px; font-weight: 800; background: #f8fafc; }
+                        .report-empty { padding: 28px 24px 32px; color: #64748b; font-weight: 600; }
+                        .report-actions { display: flex; gap: 12px; margin-top: 24px; }
+                        .report-action { padding: 14px 18px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 13px; }
+                        .report-action.primary { background: #4f46e5; color: white; }
+                        .report-action.secondary { background: white; color: #334155; border: 1px solid #e2e8f0; }
+                        @media print {
+                            body { background: white; }
+                            .report-actions { display: none; }
+                            .report-shell { padding: 0; }
+                            .summary-card, .chart-card, .report-section { box-shadow: none; border: 1px solid #e2e8f0; }
+                        }
+                        @media (max-width: 900px) {
+                            .summary-grid, .charts-grid { grid-template-columns: 1fr; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="report-shell">
+                        <section class="report-hero">
+                            <div class="report-eyebrow">Duesily Structured Report</div>
+                            <h1 class="report-title">${escapeHtml(scopeData.title)}</h1>
+                            <p class="report-subtitle">${escapeHtml(scopeData.subtitle)}</p>
+                            <div class="report-meta">
+                                <div class="report-pill">Period: ${escapeHtml(range.label)}</div>
+                                <div class="report-pill">Scope: ${escapeHtml(scopeData.scopeLabel)}</div>
+                                <div class="report-pill">Generated: ${escapeHtml(generatedAt)}</div>
+                            </div>
+                        </section>
+
+                        <div class="summary-grid">
+                            <div class="summary-card">
+                                <div class="summary-label">Income</div>
+                                <div class="summary-value">${escapeHtml(formatCurrency(summary.incomeTotal))}</div>
+                                <div class="summary-foot">${summary.incomes.length} transaction(s)</div>
+                            </div>
+                            <div class="summary-card">
+                                <div class="summary-label">Expenses</div>
+                                <div class="summary-value">${escapeHtml(formatCurrency(summary.expenseTotal))}</div>
+                                <div class="summary-foot">${summary.expenses.length} transaction(s)</div>
+                            </div>
+                            <div class="summary-card">
+                                <div class="summary-label">Net Position</div>
+                                <div class="summary-value">${escapeHtml(formatCurrency(summary.netTotal))}</div>
+                                <div class="summary-foot">${summary.netTotal >= 0 ? 'Positive balance movement' : 'Negative balance movement'}</div>
+                            </div>
+                            <div class="summary-card">
+                                <div class="summary-label">${scope === 'personal' ? 'Resident' : 'Estate Snapshot'}</div>
+                                <div class="summary-value">${scope === 'personal' ? '1' : escapeHtml(String(scopeData.residents.length))}</div>
+                                <div class="summary-foot">${scope === 'personal' ? 'Current resident records' : `${scopeData.vendors.length} vendors, ${scopeData.polls.length} polls, ${scopeData.campaigns.length} campaigns`}</div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <section class="chart-card">
+                                <div class="chart-title">Financial Performance</div>
+                                ${buildReportBarChartSvg(summary)}
+                            </section>
+                            <section class="chart-card">
+                                <div class="chart-title">Category Distribution</div>
+                                ${buildReportPieChartSvg(summary.categorySlices)}
+                            </section>
+                        </div>
+
+                        ${buildReportTable(
+                            'Income Records',
+                            summary.incomes.slice(0, 20),
+                            [
+                                { label: 'Date', render: row => formatDate(row.date) },
+                                { label: 'Title', render: row => state.userType === 'resident' && scope === 'personal' ? (row.category || 'Payment') : (row.title || row.from || 'Income') },
+                                { label: 'Category', render: row => row.category || 'Income' },
+                                { label: 'Amount', render: row => formatCurrency(row.amount) },
+                                { label: 'Status', render: row => row.status || 'completed' }
+                            ],
+                            'No income records for this period.'
+                        )}
+
+                        ${buildReportTable(
+                            'Expense Records',
+                            summary.expenses.slice(0, 20),
+                            [
+                                { label: 'Date', render: row => formatDate(row.date) },
+                                { label: 'Title', render: row => row.title || 'Expense' },
+                                { label: 'Category', render: row => row.category || 'Expense' },
+                                { label: 'Approver', render: row => row.approver || 'N/A' },
+                                { label: 'Amount', render: row => formatCurrency(row.amount) }
+                            ],
+                            'No expense records for this period.'
+                        )}
+
+                        ${scope === 'estate' ? buildReportTable(
+                            'Residents Snapshot',
+                            residentsSnapshot,
+                            [
+                                { label: 'Resident', render: row => row.name || 'Resident' },
+                                { label: 'Phone', render: row => row.phone || 'N/A' },
+                                { label: 'House', render: row => row.house || 'N/A' },
+                                { label: 'Status', render: row => row.paymentStatus || row.status || 'N/A' }
+                            ],
+                            'No resident records available.'
+                        ) : ''}
+
+                        ${scope === 'estate' ? buildReportTable(
+                            'Vendors Snapshot',
+                            vendorsSnapshot,
+                            [
+                                { label: 'Vendor', render: row => row.name || 'Vendor' },
+                                { label: 'Service', render: row => row.service || 'N/A' },
+                                { label: 'Contact', render: row => row.contact || 'N/A' },
+                                { label: 'Rating', render: row => row.rating ? `${row.rating}` : 'N/A' }
+                            ],
+                            'No vendors available.'
+                        ) : ''}
+
+                        ${scope === 'estate' ? buildReportTable(
+                            'Community Snapshot',
+                            [...pollsSnapshot, ...campaignsSnapshot],
+                            [
+                                { label: 'Item', render: row => row.title || 'Community Item' },
+                                { label: 'Type', render: row => row.targetAmount ? 'Campaign' : 'Poll' },
+                                { label: 'Status', render: row => row.status || 'active' },
+                                { label: 'Date / Goal', render: row => row.ends || (row.targetAmount ? formatCurrency(row.targetAmount) : 'N/A') }
+                            ],
+                            'No community records available.'
+                        ) : ''}
+
+                        <div class="report-actions">
+                            <a href="#" onclick="window.print(); return false;" class="report-action primary">Print / Save as PDF</a>
+                            <a href="#" onclick="window.close(); return false;" class="report-action secondary">Close Preview</a>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+        }
+
+        function triggerReportDownload(filename, html) {
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            const previewWindow = window.open(url, '_blank', 'noopener,noreferrer');
+            if (!previewWindow) {
+                window.showToast('Popup blocked. The report HTML was still downloaded.');
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+
+        window.updateReportInputVisibility = function() {
+            const period = toStr(document.getElementById('report-period')?.value || 'month');
+            const groups = {
+                day: document.getElementById('report-day-group'),
+                week: document.getElementById('report-week-group'),
+                month: document.getElementById('report-month-group'),
+                year: document.getElementById('report-year-group')
+            };
+            Object.entries(groups).forEach(([key, node]) => {
+                if (!node) return;
+                node.classList.toggle('hidden', key !== period);
+            });
+        };
+
+        window.openReportGenerator = function(scope = 'estate') {
+            const defaultYear = defaultFinanceYear;
+            const defaultMonth = defaultFinanceMonth;
+            const defaultDay = defaultFinanceDate;
+            const defaultWeek = getDefaultReportWeek();
+            document.getElementById('modal-content').innerHTML = `
+                <div class="space-y-5">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-900">Generate Report</h2>
+                            <p class="text-sm text-gray-500 mt-1">${scope === 'personal' ? 'Build your personal payment and contribution report.' : 'Build a structured estate report with summaries, charts, and records.'}</p>
+                        </div>
+                        <div class="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-wider">${scope === 'personal' ? 'Resident' : 'Estate'}</div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Report Period</label>
+                            <select id="report-period" onchange="window.updateReportInputVisibility()" class="w-full p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none">
+                                <option value="day">Day</option>
+                                <option value="week">Week</option>
+                                <option value="month" selected>Month</option>
+                                <option value="year">Year</option>
+                            </select>
+                        </div>
+
+                        <div id="report-day-group" class="hidden">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Select Day</label>
+                            <input id="report-day" type="date" value="${defaultDay}" class="w-full p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none">
+                        </div>
+
+                        <div id="report-week-group" class="hidden">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Select Week</label>
+                            <input id="report-week" type="week" value="${defaultWeek}" class="w-full p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none">
+                        </div>
+
+                        <div id="report-month-group">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Select Month</label>
+                            <input id="report-month" type="month" value="${defaultMonth}" class="w-full p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none">
+                        </div>
+
+                        <div id="report-year-group" class="hidden">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Select Year</label>
+                            <input id="report-year" type="number" min="2000" max="2100" step="1" value="${defaultYear}" class="w-full p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none">
+                        </div>
+                    </div>
+
+                    <button onclick="window.downloadSelectedReport('${scope}')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100">Download Report</button>
+                </div>
+            `;
+            document.getElementById('modal-container').classList.remove('hidden');
+            window.updateReportInputVisibility();
+        };
+
+        window.downloadSelectedReport = function(scope = 'estate') {
+            const period = toStr(document.getElementById('report-period')?.value || 'month');
+            const value = period === 'day'
+                ? document.getElementById('report-day')?.value
+                : period === 'week'
+                    ? document.getElementById('report-week')?.value
+                    : period === 'year'
+                        ? document.getElementById('report-year')?.value
+                        : document.getElementById('report-month')?.value;
+            const range = getReportRange(period, value);
+            if (!range) return window.showToast('Choose a valid report period');
+
+            const scopeData = getReportScopeData(scope);
+            const summary = summarizeReportData(scopeData, range);
+            const html = generateReportHtml({ scope, range, summary, scopeData });
+            const filename = `duesily-${scope}-${period}-report-${String(value || range.label).replace(/\s+/g, '-').replace(/[/:]/g, '-')}.html`;
+            triggerReportDownload(filename, html);
+            window.closeModal();
+            window.showToast('Report downloaded and opened for preview');
+        };
+
         // --- Modals & Interactions (Restored to global scope) ---
 
         window.openFilterModal = function() {
@@ -2127,7 +2641,10 @@
                     { id: 'yearly', label: 'Yearly' }
                 ];
                 return `
-                <h3 class="font-bold text-2xl text-gray-800 mb-4">Financials</h3>
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    <h3 class="font-bold text-2xl text-gray-800">Financials</h3>
+                    <button onclick="window.openReportGenerator('estate')" class="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Download Report</button>
+                </div>
                 
                 <div class="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
                     <button onclick="window.setFinanceType('expense')" class="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${state.financeType === 'expense' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}">Expenses</button>
@@ -2544,6 +3061,7 @@
                             <button onclick="window.switchTab('profile')" class="w-10 h-10 bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex items-center justify-center text-gray-600 active:scale-95"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
                             <h3 class="font-bold text-2xl text-gray-800">My Dashboard</h3>
                         </div>
+                        <button onclick="window.openReportGenerator('personal')" class="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Report</button>
                     </div>
 
                     <div class="white-card p-6 mb-6">
