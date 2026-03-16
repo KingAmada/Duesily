@@ -1807,7 +1807,8 @@
                     vendors: [],
                     polls: [],
                     campaigns: [],
-                    scopeLabel: 'Resident Personal Records'
+                    scopeLabel: 'Resident Personal Records',
+                    canViewPrivateResidentData: true
                 };
             }
 
@@ -1820,7 +1821,8 @@
                 vendors: [...state.vendors],
                 polls: [...state.polls],
                 campaigns: [...state.campaigns],
-                scopeLabel: 'Estate Workspace Data'
+                scopeLabel: 'Estate Workspace Data',
+                canViewPrivateResidentData: state.userType === 'admin'
             };
         }
 
@@ -1962,6 +1964,7 @@
             const vendorsSnapshot = scopeData.vendors.slice(0, 10);
             const pollsSnapshot = scopeData.polls.slice(0, 6);
             const campaignsSnapshot = scopeData.campaigns.slice(0, 6);
+            const canViewPrivateResidentData = !!scopeData.canViewPrivateResidentData;
 
             return `
                 <!doctype html>
@@ -2062,7 +2065,14 @@
                             summary.incomes.slice(0, 20),
                             [
                                 { label: 'Date', render: row => formatDate(row.date) },
-                                { label: 'Title', render: row => state.userType === 'resident' && scope === 'personal' ? (row.category || 'Payment') : (row.title || row.from || 'Income') },
+                                {
+                                    label: 'Title',
+                                    render: row => {
+                                        if (scope === 'personal') return row.category || 'Payment';
+                                        if (!canViewPrivateResidentData) return `${row.category || 'Payment'} Record`;
+                                        return row.title || row.from || 'Income';
+                                    }
+                                },
                                 { label: 'Category', render: row => row.category || 'Income' },
                                 { label: 'Amount', render: row => formatCurrency(row.amount) },
                                 { label: 'Status', render: row => row.status || 'completed' }
@@ -2083,7 +2093,7 @@
                             'No expense records for this period.'
                         )}
 
-                        ${scope === 'estate' ? buildReportTable(
+                        ${scope === 'estate' && canViewPrivateResidentData ? buildReportTable(
                             'Residents Snapshot',
                             residentsSnapshot,
                             [
@@ -2643,7 +2653,7 @@
                 return `
                 <div class="flex items-center justify-between gap-3 mb-4">
                     <h3 class="font-bold text-2xl text-gray-800">Financials</h3>
-                    <button onclick="window.openReportGenerator('estate')" class="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Download Report</button>
+                    <button onclick="window.openReportGenerator('estate')" class="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">${state.userType === 'admin' ? 'Download Report' : 'Export Summary'}</button>
                 </div>
                 
                 <div class="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
@@ -2656,12 +2666,12 @@
                     <canvas id="barChart" height="180"></canvas>
                 </div>
 
-                <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                     <div class="white-card p-5">
                         <div class="flex items-start justify-between gap-3 mb-4">
                             <div>
                                 <p class="text-[10px] font-bold text-gray-400 uppercase">Categories</p>
-                                <p class="text-sm font-semibold text-gray-800 mt-1">${filtered.length} visible record${filtered.length === 1 ? '' : 's'}</p>
+                                <p class="text-sm font-semibold text-gray-800 mt-1">${filtered.length} record${filtered.length === 1 ? '' : 's'} in view</p>
                             </div>
                             <div class="px-3 py-2 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-wider">
                                 ${state.financeType === 'expense' ? 'Spend Mix' : 'Income Mix'}
@@ -2696,17 +2706,14 @@
                     </div>
 
                     <div class="white-card p-5">
-                        <div class="flex items-start justify-between gap-3 mb-5">
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-400 uppercase">Filters</p>
-                                <p class="text-sm font-semibold text-gray-800 mt-1">Refine the chart and record list</p>
-                            </div>
+                        <div class="flex items-center justify-between gap-3 mb-5">
+                            <p class="text-[10px] font-bold text-gray-400 uppercase">Filters</p>
                             <button onclick="window.resetFilters()" class="px-3 py-2 rounded-xl bg-indigo-50 text-[10px] font-bold text-indigo-600 uppercase tracking-wide">Reset</button>
                         </div>
 
                         <div class="space-y-5">
                         <div class="rounded-[1.5rem] bg-gray-50 p-4">
-                            <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Time Range</p>
+                            <p class="text-[10px] font-bold text-gray-400 uppercase mb-3">Time Range</p>
                             <div class="grid grid-cols-2 gap-2">
                                 ${periodOptions.map(option => `
                                     <button onclick="window.setFilter('period', '${option.id}')" class="px-3 py-2.5 rounded-xl text-[10px] font-bold transition-all ${state.financeFilters.period === option.id ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'bg-white text-gray-500 hover:bg-gray-100 border border-transparent'}">${option.label}</button>
