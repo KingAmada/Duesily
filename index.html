@@ -326,11 +326,22 @@
         const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns'];
 
         // Global Production App State (Completely Empty Initial State)
+        const nowForFinanceFilters = new Date();
+        const defaultFinanceDate = nowForFinanceFilters.toISOString().slice(0, 10);
+        const defaultFinanceMonth = `${nowForFinanceFilters.getFullYear()}-${String(nowForFinanceFilters.getMonth() + 1).padStart(2, '0')}`;
+        const defaultFinanceYear = String(nowForFinanceFilters.getFullYear());
+
         const state = {
             userType: 'resident',
             activeTab: 'dashboard',
             financeType: 'expense',
-            financeFilters: { period: 'all', category: 'all', sortBy: 'date-desc' },
+            financeFilters: {
+                period: 'all',
+                category: 'all',
+                selectedDate: defaultFinanceDate,
+                selectedMonth: defaultFinanceMonth,
+                selectedYear: defaultFinanceYear
+            },
             personalFilter: 'all', 
             votingType: 'polls',
             
@@ -1648,25 +1659,80 @@
             window.switchTab('personal_dashboard');
         };
 
+        function getFinanceTimePickerMarkup() {
+            if (state.financeFilters.period === 'daily') {
+                return `
+                    <div class="mb-4">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Select Date</p>
+                        <input
+                            type="date"
+                            value="${state.financeFilters.selectedDate || defaultFinanceDate}"
+                            onchange="window.setFinancePeriodValue('selectedDate', this.value)"
+                            class="w-full px-3 py-2 rounded-xl bg-gray-50 text-sm font-semibold text-gray-700 border border-gray-100 outline-none focus:border-indigo-300 focus:bg-white"
+                        />
+                    </div>
+                `;
+            }
+
+            if (state.financeFilters.period === 'monthly') {
+                return `
+                    <div class="mb-4">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Select Month</p>
+                        <input
+                            type="month"
+                            value="${state.financeFilters.selectedMonth || defaultFinanceMonth}"
+                            onchange="window.setFinancePeriodValue('selectedMonth', this.value)"
+                            class="w-full px-3 py-2 rounded-xl bg-gray-50 text-sm font-semibold text-gray-700 border border-gray-100 outline-none focus:border-indigo-300 focus:bg-white"
+                        />
+                    </div>
+                `;
+            }
+
+            if (state.financeFilters.period === 'yearly') {
+                return `
+                    <div class="mb-4">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Select Year</p>
+                        <input
+                            type="number"
+                            min="2000"
+                            max="2100"
+                            step="1"
+                            value="${state.financeFilters.selectedYear || defaultFinanceYear}"
+                            onchange="window.setFinancePeriodValue('selectedYear', this.value)"
+                            class="w-full px-3 py-2 rounded-xl bg-gray-50 text-sm font-semibold text-gray-700 border border-gray-100 outline-none focus:border-indigo-300 focus:bg-white"
+                        />
+                    </div>
+                `;
+            }
+
+            return '';
+        }
+
         window.getFilteredRecords = function() {
             let filtered = state.financeType === 'expense' ? [...state.expenses] : [...state.incomes];
-            const now = new Date();
-            if (state.financeFilters.period === 'daily') filtered = filtered.filter(e => new Date(e.date).toDateString() === now.toDateString());
-            else if (state.financeFilters.period === 'monthly') filtered = filtered.filter(e => new Date(e.date).getMonth() === now.getMonth() && new Date(e.date).getFullYear() === now.getFullYear());
-            else if (state.financeFilters.period === 'yearly') filtered = filtered.filter(e => new Date(e.date).getFullYear() === now.getFullYear());
+            const selectedDate = state.financeFilters.selectedDate || defaultFinanceDate;
+            const selectedMonth = state.financeFilters.selectedMonth || defaultFinanceMonth;
+            const selectedYear = Number(state.financeFilters.selectedYear || defaultFinanceYear);
+
+            if (state.financeFilters.period === 'daily') {
+                filtered = filtered.filter(e => {
+                    const recordDate = new Date(e.date);
+                    return !Number.isNaN(recordDate.getTime()) && recordDate.toISOString().slice(0, 10) === selectedDate;
+                });
+            } else if (state.financeFilters.period === 'monthly') {
+                filtered = filtered.filter(e => {
+                    const recordDate = new Date(e.date);
+                    const recordMonth = `${recordDate.getFullYear()}-${String(recordDate.getMonth() + 1).padStart(2, '0')}`;
+                    return !Number.isNaN(recordDate.getTime()) && recordMonth === selectedMonth;
+                });
+            } else if (state.financeFilters.period === 'yearly') {
+                filtered = filtered.filter(e => {
+                    const recordDate = new Date(e.date);
+                    return !Number.isNaN(recordDate.getTime()) && recordDate.getFullYear() === selectedYear;
+                });
+            }
 
             if (state.financeFilters.category !== 'all') filtered = filtered.filter(e => e.category === state.financeFilters.category);
-
-            filtered.sort((a, b) => {
-                const dateA = new Date(a.date), dateB = new Date(b.date);
-                switch(state.financeFilters.sortBy) {
-                    case 'date-desc': return dateB - dateA;
-                    case 'date-asc': return dateA - dateB;
-                    case 'amount-desc': return b.amount - a.amount;
-                    case 'amount-asc': return a.amount - b.amount;
-                    default: return 0;
-                }
-            });
             return filtered;
         };
 
@@ -1677,7 +1743,7 @@
             const categories = [...new Set(dataToFilter.map(e => e.category))];
             const content = `
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold">Filter & Sort</h2>
+                    <h2 class="text-2xl font-bold">Filters</h2>
                     <button onclick="window.resetFilters()" class="text-xs font-bold text-indigo-600">Reset</button>
                 </div>
                 <div class="space-y-8">
@@ -1689,20 +1755,13 @@
                             `).join('')}
                         </div>
                     </div>
+                    ${getFinanceTimePickerMarkup()}
                     <div>
                         <p class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3">Category</p>
                         <div class="flex flex-wrap gap-2">
                             <div onclick="window.setFilter('category', 'all')" class="filter-chip ${state.financeFilters.category === 'all' ? 'active' : ''}">All Categories</div>
                             ${categories.map(cat => `
                                 <div onclick="window.setFilter('category', '${cat}')" class="filter-chip ${state.financeFilters.category === cat ? 'active' : ''}">${cat}</div>
-                            `).join('')}
-                        </div>
-                    </div>
-                    <div>
-                        <p class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3">Sort By</p>
-                        <div class="grid grid-cols-2 gap-2">
-                            ${[{id: 'date-desc', label: 'Newest First'}, {id: 'date-asc', label: 'Oldest First'}, {id: 'amount-desc', label: 'Highest Amount'}, {id: 'amount-asc', label: 'Lowest Amount'}].map(s => `
-                                <div onclick="window.setFilter('sortBy', '${s.id}')" class="p-4 rounded-2xl border-2 text-center text-xs font-bold transition-all cursor-pointer ${state.financeFilters.sortBy === s.id ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-gray-50 text-gray-400'}">${s.label}</div>
                             `).join('')}
                         </div>
                     </div>
@@ -1715,13 +1774,31 @@
 
         window.setFilter = function(key, value) {
             state.financeFilters[key] = value;
+            if (key === 'period') {
+                if (value === 'daily' && !state.financeFilters.selectedDate) state.financeFilters.selectedDate = defaultFinanceDate;
+                if (value === 'monthly' && !state.financeFilters.selectedMonth) state.financeFilters.selectedMonth = defaultFinanceMonth;
+                if (value === 'yearly' && !state.financeFilters.selectedYear) state.financeFilters.selectedYear = defaultFinanceYear;
+            }
+            const modal = document.getElementById('modal-container');
+            const modalIsOpen = modal && !modal.classList.contains('hidden');
+            if (modalIsOpen) window.openFilterModal();
+            else if (state.activeTab === 'finance') window.switchTab('finance');
+        };
+        window.setFinancePeriodValue = function(key, value) {
+            state.financeFilters[key] = value;
             const modal = document.getElementById('modal-container');
             const modalIsOpen = modal && !modal.classList.contains('hidden');
             if (modalIsOpen) window.openFilterModal();
             else if (state.activeTab === 'finance') window.switchTab('finance');
         };
         window.resetFilters = function() {
-            state.financeFilters = { period: 'monthly', category: 'all', sortBy: 'date-desc' };
+            state.financeFilters = {
+                period: 'all',
+                category: 'all',
+                selectedDate: defaultFinanceDate,
+                selectedMonth: defaultFinanceMonth,
+                selectedYear: defaultFinanceYear
+            };
             const modal = document.getElementById('modal-container');
             const modalIsOpen = modal && !modal.classList.contains('hidden');
             if (modalIsOpen) window.openFilterModal();
@@ -2050,12 +2127,6 @@
                     { id: 'monthly', label: 'Monthly' },
                     { id: 'yearly', label: 'Yearly' }
                 ];
-                const sortOptions = [
-                    { id: 'date-desc', label: 'Newest' },
-                    { id: 'date-asc', label: 'Oldest' },
-                    { id: 'amount-desc', label: 'Highest' },
-                    { id: 'amount-asc', label: 'Lowest' }
-                ];
                 return `
                 <h3 class="font-bold text-2xl text-gray-800 mb-4">Financials</h3>
                 
@@ -2089,21 +2160,14 @@
                             </div>
                         </div>
 
+                        ${getFinanceTimePickerMarkup()}
+
                         <div class="mb-4">
                             <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Category</p>
                             <div class="flex flex-wrap gap-2">
                                 <button onclick="window.setFilter('category', 'all')" class="px-3 py-2 rounded-xl text-[10px] font-bold transition-all ${state.financeFilters.category === 'all' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}">All</button>
                                 ${categories.map(category => `
                                     <button onclick="window.setFilter('category', '${category}')" class="px-3 py-2 rounded-xl text-[10px] font-bold transition-all ${state.financeFilters.category === category ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}">${category}</button>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <div class="mb-4">
-                            <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Sort By</p>
-                            <div class="grid grid-cols-2 gap-2">
-                                ${sortOptions.map(option => `
-                                    <button onclick="window.setFilter('sortBy', '${option.id}')" class="px-3 py-2 rounded-xl text-[10px] font-bold transition-all ${state.financeFilters.sortBy === option.id ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-transparent'}">${option.label}</button>
                                 `).join('')}
                             </div>
                         </div>
@@ -2118,7 +2182,6 @@
                 <div class="mt-8">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="font-bold text-lg text-gray-800">${state.financeType === 'expense' ? 'Expense Records' : 'Income Records'}</h3>
-                        <p class="text-[10px] font-bold text-gray-400 uppercase">${state.financeFilters.sortBy.replace('-', ' ')}</p>
                     </div>
                     <div class="space-y-3 pb-8">
                         ${filtered.length ? filtered.map(e => `
