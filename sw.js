@@ -1,4 +1,4 @@
-const CACHE_NAME = 'duesily-shell-v2';
+const CACHE_NAME = 'duesily-shell-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -33,6 +33,13 @@ self.addEventListener('fetch', event => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+
+  const isAppShellRequest =
+    requestUrl.pathname === '/' ||
+    requestUrl.pathname.endsWith('/index.html') ||
+    APP_SHELL.some(asset => requestUrl.pathname.endsWith(asset.replace(/^\.\//, '')));
+
+  if (!isAppShellRequest) return;
 
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {

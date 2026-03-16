@@ -322,7 +322,6 @@
         let realtimeChannel = null;
         const chartStore = {};
         const ESTATE_SIGNUPS_TABLE = 'duesily_estate_signups';
-        const LOCAL_SIGNUPS_KEY = 'duesily_estate_signups_local';
         const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns'];
 
         // Global Production App State (Completely Empty Initial State)
@@ -426,9 +425,9 @@
             if (!indicator || !label || !subtext) return;
 
             indicator.classList.toggle('offline', state.isOffline);
-            label.textContent = state.isOffline ? 'Offline mode' : 'Connected';
+            label.textContent = state.isOffline ? 'Offline view only' : 'Connected';
             subtext.textContent = state.isOffline
-                ? 'Changes may wait for network before syncing'
+                ? 'Reconnect before saving payments, expenses, residents, vendors, polls, or campaigns'
                 : 'Live sync is active';
         }
 
@@ -479,20 +478,8 @@
             return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
         }
 
-        function getLocalEstateSignups() {
-            try {
-                return JSON.parse(localStorage.getItem(LOCAL_SIGNUPS_KEY) || '[]');
-            } catch (_) {
-                return [];
-            }
-        }
-
-        function saveLocalEstateSignups(signups) {
-            localStorage.setItem(LOCAL_SIGNUPS_KEY, JSON.stringify(signups));
-        }
-
         async function fetchEstateSignups() {
-            if (!supabase) return sanitizeCollection(getLocalEstateSignups());
+            if (!supabase) return [];
 
             const { data, error } = await supabase
                 .from(ESTATE_SIGNUPS_TABLE)
@@ -501,20 +488,15 @@
 
             if (error) {
                 console.error('Failed to fetch estate signups:', error);
-                return sanitizeCollection(getLocalEstateSignups());
+                return [];
             }
 
             return sanitizeCollection(data);
         }
 
         async function createEstateSignup(signupPayload) {
-            const safePayload = sanitizeForState(signupPayload);
-
             if (!supabase) {
-                const signups = getLocalEstateSignups();
-                signups.unshift(safePayload);
-                saveLocalEstateSignups(signups);
-                return safePayload;
+                throw new Error('Reconnect before creating an estate account');
             }
 
             const { data, error } = await supabase
@@ -525,13 +507,18 @@
 
             if (error) {
                 console.error('Failed to create estate signup:', error);
-                const signups = getLocalEstateSignups();
-                signups.unshift(safePayload);
-                saveLocalEstateSignups(signups);
-                return safePayload;
+                throw new Error('Could not create estate account');
             }
 
             return sanitizeForState(data);
+        }
+
+        function ensureOnlineMutation(actionLabel = 'save changes') {
+            if (!supabase || state.isOffline) {
+                window.showToast(`Reconnect to ${actionLabel}`);
+                return false;
+            }
+            return true;
         }
 
         function getDuesilyCreateAccountEndpoint() {
@@ -1119,10 +1106,7 @@
             if (!normalizedPhone || !normalizedEstateId) return false;
 
             if (!supabase) {
-                return state.residents.some(resident =>
-                    normalizeId(resident.estateId) === normalizedEstateId &&
-                    normalizePhone(resident.phone) === normalizedPhone
-                );
+                throw new Error('Reconnect to validate resident records');
             }
 
             const { data, error } = await supabase
@@ -1445,13 +1429,7 @@
 
             const passwordHash = await hashPassword(newPassword);
 
-            if (!supabase) {
-                resident.passwordHash = passwordHash;
-                state.forcePasswordChange = false;
-                window.closeModal();
-                window.showToast('Password updated successfully');
-                return;
-            }
+            if (!ensureOnlineMutation('update passwords')) return;
 
             const { data, error } = await supabase
                 .from('duesily_residents')
@@ -1591,6 +1569,7 @@
             }
 
             if (!staffMembers.length) return window.showToast('Add at least one valid staff member');
+            if (!ensureOnlineMutation('create estate accounts')) return;
             if (await estateSignupExists({ email, phone })) {
                 return window.showToast('An estate account with this email or phone already exists');
             }
@@ -1609,7 +1588,12 @@
                 createdAt: new Date().toISOString()
             };
 
-            const createdEstate = await createEstateSignup(signupPayload);
+            let createdEstate;
+            try {
+                createdEstate = await createEstateSignup(signupPayload);
+            } catch (error) {
+                return window.showToast(error.message || 'Could not create estate account');
+            }
             try {
                 await ensureEstateVirtualAccount(createdEstate.id, { force: true });
             } catch (error) {
@@ -2966,14 +2950,7 @@
 
         window.confirmPayment = async () => {
             const residentName = getCurrentResidentName();
-            if(!supabase) {
-                upsertLocalRecord('incomes', withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: residentName, date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: residentName }));
-                updateGlobalState();
-                window.showToast('Payment submitted for verification!');
-                window.closeModal();
-                if(state.activeTab === 'dashboard') window.switchTab('dashboard');
-                return;
-            }
+            if (!ensureOnlineMutation('submit payments')) return;
 
             const paymentPayload = withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: residentName, date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: residentName });
             const result = await runMutation(
@@ -2991,14 +2968,7 @@
         window.submitVote = async (id, choice) => {
             const poll = state.polls.find(p => p.id === id);
             if (poll && !poll.voted) {
-                if(!supabase) {
-                    if (choice === 'agree') poll.agree += 1;
-                    else poll.disagree += 1;
-                    poll.voted = true;
-                    window.showToast('Vote recorded securely!');
-                    window.switchTab('voting');
-                    return;
-                }
+                if (!ensureOnlineMutation('record votes')) return;
 
                 const updates = { voted: true };
                 if (choice === 'agree') updates.agree = poll.agree + 1;
@@ -3025,15 +2995,7 @@
             const category = toStr(document.getElementById('disburse-category').value);
             if(!vendorId) return window.showToast("Select a vendor");
             if(!category) return window.showToast("Select a category");
-
-            if(!supabase) {
-                upsertLocalRecord('expenses', withCurrentEstate({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText }));
-                updateGlobalState();
-                window.showToast('Disbursement Logged!');
-                window.closeModal();
-                if(state.activeTab === 'manage') window.switchTab('manage');
-                return;
-            }
+            if (!ensureOnlineMutation('log disbursements')) return;
 
             const expensePayload = withCurrentEstate({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
             const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
@@ -3055,15 +3017,7 @@
             if (desc === false) return;
             const date = toStr(document.getElementById('poll-date').value);
             if(!date) return window.showToast("Please provide title and dateline");
-
-            if(!supabase) {
-                upsertLocalRecord('polls', withCurrentEstate({ id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false }));
-                updateGlobalState();
-                window.showToast('Project Published!');
-                window.closeModal();
-                if(state.activeTab === 'manage') window.switchTab('manage');
-                return;
-            }
+            if (!ensureOnlineMutation('publish polls')) return;
 
             const pollPayload = withCurrentEstate({ id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false });
             const { data, error } = await supabase.from('duesily_polls').insert([pollPayload]).select().single();
@@ -3090,15 +3044,7 @@
             if (target === false) return;
             const date = toStr(document.getElementById('camp-date').value);
             if(!date) return window.showToast("Provide title, target & dateline");
-
-            if(!supabase) {
-                upsertLocalRecord('campaigns', withCurrentEstate({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 }));
-                updateGlobalState();
-                window.showToast('Funding Project Launched!');
-                window.closeModal();
-                if(state.activeTab === 'manage') window.switchTab('manage');
-                return;
-            }
+            if (!ensureOnlineMutation('launch campaigns')) return;
 
             const campaignPayload = withCurrentEstate({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 });
             const { data, error } = await supabase.from('duesily_campaigns').insert([campaignPayload]).select().single();
@@ -3127,19 +3073,7 @@
                 let endDt = campaign.ends;
                 if(rAmt >= campaign.targetAmount) { rAmt = campaign.targetAmount; stat = 'completed'; endDt = 'Closed'; }
                 
-                if(!supabase) {
-                    campaign.raisedAmount = rAmt;
-                    campaign.contributors += 1;
-                    campaign.status = stat;
-                    campaign.ends = endDt;
-                    const residentName = getCurrentResidentName();
-                    upsertLocalRecord('incomes', withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : residentName, category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : residentName, status: 'completed' }));
-                    state.totalBalance += amount;
-                    window.showToast("Contribution Successful!");
-                    window.closeModal();
-                    if(state.activeTab === 'voting') window.switchTab('voting');
-                    return;
-                }
+                if (!ensureOnlineMutation('record contributions')) return;
 
                 const campaignUpdate = await supabase.from('duesily_campaigns').update({ raisedAmount: rAmt, contributors: campaign.contributors + 1, status: stat, ends: endDt }).eq('id', id).eq('estateId', getCurrentEstateId()).select().single();
                 if (campaignUpdate.error) {
@@ -3187,6 +3121,7 @@
             if(!name || !house || !street || !phone || defaultPassword.length < 4) {
                 return window.showToast('Fill required fields and enter a valid phone number');
             }
+            if (!ensureOnlineMutation('register residents')) return;
             const estateId = getCurrentEstateId();
             try {
                 if (await residentExistsInEstate({ phone, estateId })) {
@@ -3196,15 +3131,6 @@
                 return window.showToast(error.message || 'Could not validate resident record');
             }
             const passwordHash = await hashPassword(defaultPassword);
-            
-            if(!supabase) {
-                upsertLocalRecord('residents', withCurrentEstate({ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due', passwordHash }));
-                updateGlobalState();
-                window.showToast(`Resident registered. Default password: ${defaultPassword}`);
-                window.closeModal();
-                if(state.activeTab === 'manage') window.switchTab('manage');
-                return;
-            }
 
             const residentPayload = withCurrentEstate({ id: generateId(), name, house, flat, street, phone, email, status: 'Active', paymentStatus: 'Due', passwordHash });
             const { data, error } = await supabase.from('duesily_residents').insert([residentPayload]).select().single();
@@ -3233,15 +3159,7 @@
             if (subCategory === false) return;
 
             if(!service) return window.showToast('Select a vendor service');
-            
-            if(!supabase) {
-                upsertLocalRecord('vendors', withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }));
-                updateGlobalState();
-                window.showToast('Vendor Added!');
-                window.closeModal();
-                if(state.activeTab === 'manage') window.switchTab('manage');
-                return;
-            }
+            if (!ensureOnlineMutation('add vendors')) return;
 
             const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] })]).select().single();
             if (error) {
