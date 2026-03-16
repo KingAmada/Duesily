@@ -530,6 +530,15 @@
             return `${baseUrl}/_functions/apiDuesilyCreateAccount`;
         }
 
+        function getDuesilyCreateResidentAccountEndpoint() {
+            const baseUrl = toStr(WIX_BACKEND_BASE_URL).replace(/\/$/, '');
+            if (!baseUrl) return '';
+            if (baseUrl.includes('/_functions/')) {
+                return `${baseUrl}/apiDuesilyCreateResidentAccount`;
+            }
+            return `${baseUrl}/_functions/apiDuesilyCreateResidentAccount`;
+        }
+
         async function requestEstateVirtualAccount(estateId) {
             const endpoint = getDuesilyCreateAccountEndpoint();
             if (!endpoint) {
@@ -581,6 +590,77 @@
             return mergedEstate;
         }
 
+        async function requestResidentVirtualAccount(residentId) {
+            const endpoint = getDuesilyCreateResidentAccountEndpoint();
+            if (!endpoint) {
+                throw new Error('Missing Wix backend URL. Add wixBackendBaseUrl to config.js.');
+            }
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ residentId })
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                throw new Error(data.message || 'Could not create resident payment account');
+            }
+
+            return sanitizeForState(data);
+        }
+
+        function syncResidentAccountState(residentId, accountData = {}) {
+            const normalizedResidentId = normalizeId(residentId);
+            if (!normalizedResidentId) return null;
+
+            let mergedResident = null;
+            state.residents = sanitizeCollection(state.residents).map(resident => {
+                if (normalizeId(resident.id) !== normalizedResidentId) return resident;
+                mergedResident = sanitizeForState({
+                    ...resident,
+                    walletAccountNumber: toStr(accountData.walletAccountNumber) || toStr(resident.walletAccountNumber),
+                    walletStatus: toStr(accountData.walletStatus) || toStr(resident.walletStatus) || 'active',
+                    accountName: toStr(accountData.accountName) || toStr(resident.accountName) || toStr(resident.name),
+                    accountProvider: toStr(accountData.accountProvider) || toStr(resident.accountProvider) || 'Stanbic'
+                });
+                return mergedResident;
+            });
+
+            state.currentResidentMemberships = sanitizeCollection(state.currentResidentMemberships).map(resident => {
+                if (normalizeId(resident.id) !== normalizedResidentId) return resident;
+                return sanitizeForState({
+                    ...resident,
+                    walletAccountNumber: toStr(accountData.walletAccountNumber) || toStr(resident.walletAccountNumber),
+                    walletStatus: toStr(accountData.walletStatus) || toStr(resident.walletStatus) || 'active',
+                    accountName: toStr(accountData.accountName) || toStr(resident.accountName) || toStr(resident.name),
+                    accountProvider: toStr(accountData.accountProvider) || toStr(resident.accountProvider) || 'Stanbic'
+                });
+            });
+
+            return mergedResident;
+        }
+
+        async function ensureResidentVirtualAccount(residentId, { force = false } = {}) {
+            const targetResidentId = normalizeId(residentId);
+            if (!targetResidentId) throw new Error('Resident ID is required');
+
+            const residentRecord = state.residents.find(resident => normalizeId(resident.id) === targetResidentId)
+                || getCurrentResidentMemberships().find(resident => normalizeId(resident.id) === targetResidentId);
+            if (!residentRecord) throw new Error('Resident record not found');
+
+            const existingAccountNumber = toStr(residentRecord.walletAccountNumber);
+            if (!force && existingAccountNumber) {
+                return residentRecord;
+            }
+
+            const accountResult = await requestResidentVirtualAccount(targetResidentId);
+            return syncResidentAccountState(targetResidentId, accountResult) || sanitizeForState({
+                ...residentRecord,
+                ...accountResult
+            });
+        }
+
         async function fetchEstateRecordById(estateId) {
             const normalizedEstateId = toStr(estateId);
             if (!normalizedEstateId) return null;
@@ -594,7 +674,7 @@
 
             const { data, error } = await supabase
                 .from('duesily_residents')
-                .select('id,name,email,phone,passwordHash,estateId,status,paymentStatus')
+                .select('id,name,email,phone,passwordHash,estateId,status,paymentStatus,walletAccountNumber,walletStatus,accountName,accountProvider')
                 .order('id', { ascending: false });
 
             if (error) {
@@ -666,7 +746,9 @@
         }
 
         function getCurrentResident() {
-            return state.residents.find(r => normalizeId(r.id) === normalizeId(state.currentResidentId)) || null;
+            return state.residents.find(r => normalizeId(r.id) === normalizeId(state.currentResidentId))
+                || getCurrentResidentMemberships().find(r => normalizeId(r.id) === normalizeId(state.currentResidentId))
+                || null;
         }
 
         function getCurrentResidentId() {
@@ -918,6 +1000,14 @@
                     state.currentEstateRecord = await ensureEstateVirtualAccount(normalizedEstateId);
                 } catch (error) {
                     console.error('Failed to provision estate virtual account:', error);
+                }
+            }
+
+            if (state.userType === 'resident' && residentId && WIX_BACKEND_BASE_URL) {
+                try {
+                    await ensureResidentVirtualAccount(residentId);
+                } catch (error) {
+                    console.error('Failed to provision resident virtual account:', error);
                 }
             }
         }
@@ -2327,9 +2417,37 @@
 
         window.openPaymentModal = async function() {
             const estateRecord = state.currentEstateRecord || {};
+            const residentRecord = getCurrentResident();
             let accountRecord = estateRecord;
+            let paymentTitle = 'Make Payment';
+            let paymentSubtitle = "Transfer your dues to the estate's verified account.";
+            let accountTypeLabel = 'Estate Collection Account';
+            let emptyStateMessage = 'Estate payment account is not ready yet. Contact the estate admin.';
+            let iconName = 'building-2';
+            let primaryActionLabel = 'Refresh payment status';
 
-            if (!toStr(accountRecord.walletAccountNumber) && state.userType === 'admin' && getCurrentEstateId()) {
+            if (state.userType === 'resident') {
+                if (!residentRecord?.id) {
+                    return window.showToast('Resident account could not be resolved');
+                }
+
+                accountRecord = residentRecord;
+                paymentTitle = 'Pay Your Dues';
+                paymentSubtitle = 'Use your dedicated resident account so your payment is matched to you automatically.';
+                accountTypeLabel = 'Resident Payment Account';
+                emptyStateMessage = 'Your resident payment account is not ready yet. Contact your estate admin.';
+                iconName = 'user';
+
+                if (!toStr(accountRecord.walletAccountNumber)) {
+                    try {
+                        window.showToast('Linking your payment account...');
+                        accountRecord = await ensureResidentVirtualAccount(residentRecord.id, { force: true });
+                    } catch (error) {
+                        console.error('Failed to generate resident payment account:', error);
+                        return window.showToast(error.message || 'Could not link your payment account');
+                    }
+                }
+            } else if (!toStr(accountRecord.walletAccountNumber) && getCurrentEstateId()) {
                 try {
                     window.showToast('Linking estate payment account...');
                     accountRecord = await ensureEstateVirtualAccount(getCurrentEstateId(), { force: true });
@@ -2340,20 +2458,24 @@
             }
 
             const accNum = toStr(accountRecord.walletAccountNumber);
-            const accountName = toStr(accountRecord.accountName) || getCurrentEstateName();
+            const accountName = toStr(accountRecord.accountName) || (state.userType === 'resident' ? getCurrentResidentName() : getCurrentEstateName());
             if (!accNum) {
-                return window.showToast('Estate payment account is not ready yet. Contact the estate admin.');
+                return window.showToast(emptyStateMessage);
             }
 
             const content = `
                 <div class="text-center">
                     <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-sm">
-                        <i data-lucide="building-2" class="w-8 h-8"></i>
+                        <i data-lucide="${iconName}" class="w-8 h-8"></i>
                     </div>
-                    <h2 class="text-2xl font-bold mb-2">Make Payment</h2>
-                    <p class="text-gray-500 text-sm mb-6">Transfer your dues to the estate's verified account.</p>
+                    <h2 class="text-2xl font-bold mb-2">${paymentTitle}</h2>
+                    <p class="text-gray-500 text-sm mb-6">${paymentSubtitle}</p>
                     
                     <div class="bg-gray-50 rounded-[1.5rem] p-5 text-left space-y-4 mb-6 border border-gray-100">
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Account Type</p>
+                            <p class="font-bold text-gray-800">${accountTypeLabel}</p>
+                        </div>
                         <div>
                             <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Bank Name</p>
                             <p class="font-bold text-gray-800">Stanbic IBTC Bank</p>
@@ -2372,8 +2494,15 @@
                             </button>
                         </div>
                     </div>
-                    
-                    <button onclick="window.confirmPayment()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">I have made payment</button>
+
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 text-left mb-4">
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-1">Automatic matching</p>
+                        <p class="text-sm text-emerald-700">${state.userType === 'resident'
+                            ? 'Transfers into this account are matched to your resident profile automatically.'
+                            : 'Transfers into this account are recorded against the estate automatically.'}</p>
+                    </div>
+
+                    <button onclick="window.confirmPayment()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">${primaryActionLabel}</button>
                 </div>
             `;
             document.getElementById('modal-content').innerHTML = content;
@@ -3541,20 +3670,18 @@
         };
 
         window.confirmPayment = async () => {
-            const residentName = getCurrentResidentName();
-            if (!ensureOnlineMutation('submit payments')) return;
+            if (!ensureOnlineMutation('refresh payment records')) return;
 
-            const paymentPayload = withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: residentName, date: new Date().toISOString(), amount: 25000, category: 'Dues', status: 'pending', icon: 'home', color: 'bg-indigo-500', from: residentName });
-            const result = await runMutation(
-                async () => supabase.from('duesily_incomes').insert([paymentPayload]),
-                'Payment submitted for verification!',
-                'Could not submit payment'
-            );
-            if (!result) return;
-
-            await refreshTableData('incomes');
+            await Promise.all([
+                refreshTableData('incomes'),
+                refreshTableData('residents')
+            ]);
+            updateGlobalState();
             window.closeModal();
-            if(state.activeTab === 'dashboard') window.switchTab('dashboard');
+            window.showToast('Payment records refreshed. If your transfer just landed, it may take a moment to appear.');
+            if (state.activeTab === 'dashboard' || state.activeTab === 'finance') {
+                window.switchTab(state.activeTab);
+            }
         };
 
         window.submitVote = async (id, choice) => {
@@ -3732,6 +3859,15 @@
             }
 
             upsertLocalRecord('residents', data);
+
+            let residentRecord = data;
+            try {
+                residentRecord = await ensureResidentVirtualAccount(data.id, { force: true });
+            } catch (accountError) {
+                console.error('Failed to provision resident payment account:', accountError);
+            }
+
+            upsertLocalRecord('residents', residentRecord || data);
             updateGlobalState();
             window.showToast(`Resident registered. Default password: ${defaultPassword}`);
             window.closeModal();
