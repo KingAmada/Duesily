@@ -10,8 +10,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Duesily">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="icons/icon.svg">
+    <link rel="icon" href="icons/Fav%20Icon.png" type="image/png">
+    <link rel="apple-touch-icon" href="icons/Fav%20Icon.png">
     <script src="./config.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
@@ -83,6 +83,17 @@
         .pulse-ring {
             animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
         }
+        .brand-wordmark {
+            width: min(300px, 78vw);
+            height: auto;
+            display: block;
+        }
+        .app-brandmark {
+            width: 128px;
+            max-width: 38vw;
+            height: auto;
+            display: block;
+        }
         @keyframes pulse-ring {
             0% { transform: scale(0.8); opacity: 0.5; }
             100% { transform: scale(2.5); opacity: 0; }
@@ -101,10 +112,7 @@
     <div id="login-view" class="fixed inset-0 z-50 bg-white overflow-y-auto hide-scroll flex flex-col items-center pt-12 px-6 pb-24">
         
         <!-- Header -->
-        <div class="w-24 h-24 bg-indigo-600 rounded-[2rem] flex items-center justify-center mb-6 shadow-xl shadow-indigo-200">
-            <i data-lucide="home" class="text-white w-12 h-12"></i>
-        </div>
-        <h1 class="text-3xl font-black text-gray-900 mb-2 tracking-tight">Duesily</h1>
+        <img src="icons/In-app%20Logo.png" alt="Duesily logo" class="brand-wordmark mb-5">
         <p class="text-gray-500 mb-10 font-medium">Smart Estate Management</p>
         
         <!-- Login Actions -->
@@ -124,11 +132,11 @@
             <div class="space-y-4 mb-6 text-left">
                 <div>
                     <label id="login-id-label" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Email or Phone</label>
-                    <input type="text" id="login-email" placeholder="you@example.com" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all">
+                    <input type="text" id="login-email" placeholder="you@example.com" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all" data-trim-input maxlength="120" autocapitalize="off" autocomplete="username">
                 </div>
                 <div>
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Password</label>
-                    <input type="password" id="login-pass" placeholder="••••••••" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all">
+                    <input type="password" id="login-pass" placeholder="••••••••" class="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all" maxlength="64" autocomplete="current-password">
                 </div>
             </div>
             <button id="login-submit-btn" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm mb-4">Sign In</button>
@@ -217,7 +225,7 @@
         <!-- Header -->
         <header class="p-6 flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-40">
             <div>
-                <p class="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Duesily Estate</p>
+                <img src="icons/In-app%20Logo.png" alt="Duesily" class="app-brandmark mb-2">
                 <p class="text-sm text-gray-400" id="welcome-text">Good morning,</p>
                 <h2 class="text-xl font-bold" id="user-name">Loading...</h2>
             </div>
@@ -770,6 +778,129 @@
             return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         };
 
+        function clearFieldError(input) {
+            if (!input) return;
+            input.classList.remove('ring-2', 'ring-rose-200', 'bg-rose-50');
+        }
+
+        function flagFieldError(input, message) {
+            if (!input) {
+                window.showToast(message);
+                return false;
+            }
+            input.classList.add('ring-2', 'ring-rose-200', 'bg-rose-50');
+            input.focus();
+            window.showToast(message);
+            return false;
+        }
+
+        function normalizeTextInput(input) {
+            if (!input) return '';
+            clearFieldError(input);
+            input.value = toStr(input.value).replace(/\s{2,}/g, ' ');
+            return input.value;
+        }
+
+        function normalizePhoneField(input) {
+            if (!input) return '';
+            clearFieldError(input);
+            input.value = normalizePhone(input.value).slice(0, 11);
+            return input.value;
+        }
+
+        function readTextField(id, label, { min = 1, max = 120, pattern = null, patternMessage = null } = {}) {
+            const input = document.getElementById(id);
+            const value = normalizeTextInput(input);
+            if (!value) return flagFieldError(input, `${label} is required`);
+            if (value.length < min) return flagFieldError(input, `${label} must be at least ${min} characters`);
+            if (value.length > max) return flagFieldError(input, `${label} must be at most ${max} characters`);
+            if (pattern && !pattern.test(value)) {
+                return flagFieldError(input, patternMessage || `${label} contains invalid characters`);
+            }
+            return value;
+        }
+
+        function readOptionalTextField(id, label, { max = 120, pattern = null, patternMessage = null } = {}) {
+            const input = document.getElementById(id);
+            const value = normalizeTextInput(input);
+            if (!value) return '';
+            if (value.length > max) return flagFieldError(input, `${label} must be at most ${max} characters`);
+            if (pattern && !pattern.test(value)) {
+                return flagFieldError(input, patternMessage || `${label} contains invalid characters`);
+            }
+            return value;
+        }
+
+        function readEmailField(id, label, { required = true } = {}) {
+            const input = document.getElementById(id);
+            const value = normalizeTextInput(input).toLowerCase();
+            if (!value) return required ? flagFieldError(input, `${label} is required`) : '';
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailPattern.test(value)) return flagFieldError(input, `Enter a valid ${label.toLowerCase()}`);
+            return value;
+        }
+
+        function readPhoneField(id, label, { required = true } = {}) {
+            const input = document.getElementById(id);
+            const value = normalizePhoneField(input);
+            if (!value) return required ? flagFieldError(input, `${label} is required`) : '';
+            if (value.length !== 11) return flagFieldError(input, `${label} must be exactly 11 digits`);
+            return value;
+        }
+
+        function readCurrencyField(id, label, { min = 1 } = {}) {
+            const input = document.getElementById(id);
+            clearFieldError(input);
+            const raw = toStr(input?.value);
+            const amount = Number(raw);
+            if (!raw) return flagFieldError(input, `${label} is required`);
+            if (!Number.isFinite(amount) || amount < min) return flagFieldError(input, `${label} must be at least ${min}`);
+            return amount;
+        }
+
+        function readLoginIdentifierField(id) {
+            const input = document.getElementById(id);
+            const raw = normalizeTextInput(input);
+            if (!raw) return flagFieldError(input, 'Email or phone is required');
+            const digits = normalizePhone(raw);
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (digits) {
+                if (digits.length !== 11) return flagFieldError(input, 'Phone number must be exactly 11 digits');
+                input.value = digits;
+                return digits;
+            }
+            if (!emailPattern.test(raw.toLowerCase())) return flagFieldError(input, 'Enter a valid email or 11-digit phone number');
+            input.value = raw.toLowerCase();
+            return input.value;
+        }
+
+        function readPasswordField(id, label, { min = 4, max = 64 } = {}) {
+            const input = document.getElementById(id);
+            clearFieldError(input);
+            const value = String(input?.value || '');
+            if (!value) return flagFieldError(input, `${label} is required`);
+            if (value.length < min) return flagFieldError(input, `${label} must be at least ${min} characters`);
+            if (value.length > max) return flagFieldError(input, `${label} must be at most ${max} characters`);
+            return value;
+        }
+
+        function applyInputGuards(root = document) {
+            root.querySelectorAll('[data-phone-input]').forEach(input => {
+                if (input.dataset.guardBound === 'true') return;
+                input.dataset.guardBound = 'true';
+                input.setAttribute('inputmode', 'numeric');
+                input.setAttribute('maxlength', '11');
+                input.addEventListener('input', () => normalizePhoneField(input));
+                input.addEventListener('blur', () => normalizePhoneField(input));
+            });
+
+            root.querySelectorAll('[data-trim-input]').forEach(input => {
+                if (input.dataset.trimBound === 'true') return;
+                input.dataset.trimBound = 'true';
+                input.addEventListener('blur', () => normalizeTextInput(input));
+            });
+        }
+
         window.showToast = function(msg) {
             const toast = document.getElementById('toast');
             toast.innerText = msg;
@@ -808,12 +939,13 @@
         };
 
         window.performLogin = async function(type) {
-            const email = document.getElementById('login-email').value;
-            const pass = document.getElementById('login-pass').value;
-            if(!email || !pass) return window.showToast("Please enter credentials");
+            const loginId = readLoginIdentifierField('login-email');
+            if (!loginId) return;
+            const pass = readPasswordField('login-pass', 'Password');
+            if (!pass) return;
 
             if (type === 'admin') {
-                const adminMatch = await findAdminAccount(email);
+                const adminMatch = await findAdminAccount(loginId);
                 if (!adminMatch?.account) return window.showToast('Estate admin account not found');
 
                 const passwordHash = await hashPassword(pass);
@@ -824,7 +956,7 @@
                 return;
             }
 
-            const residentAccount = await findResidentAccount(email);
+            const residentAccount = await findResidentAccount(loginId);
             if (!residentAccount) return window.showToast('Resident account not found');
             if (!residentAccount.estateId) return window.showToast('Resident is not assigned to an estate');
 
@@ -900,28 +1032,28 @@
                     <button onclick="window.captureEstateLocation()" class="px-3 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-100">Get GPS</button>
                 </div>
                 <div class="space-y-4">
-                    <input type="text" id="estate-name" placeholder="Name of Estate" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <textarea id="estate-address" placeholder="Address of Estate" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none"></textarea>
+                    <input type="text" id="estate-name" placeholder="Name of Estate" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
+                    <textarea id="estate-address" placeholder="Address of Estate" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none" data-trim-input maxlength="180"></textarea>
                     <input type="text" id="estate-gps" placeholder="GPS location will appear here" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" readonly>
                     <div class="grid grid-cols-2 gap-4">
-                        <input type="email" id="estate-email" placeholder="Estate Email" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                        <input type="tel" id="estate-phone" placeholder="Estate Phone" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <input type="email" id="estate-email" placeholder="Estate Email" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
+                        <input type="tel" id="estate-phone" placeholder="Estate Phone" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
                     </div>
-                    <input type="password" id="estate-password" placeholder="Password" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="password" id="estate-password" placeholder="Password" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" maxlength="64" autocomplete="new-password">
                     <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
                         <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Admin Staff 1</p>
-                        <input type="text" id="staff-1-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <input type="text" id="staff-1-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
                         <div class="grid grid-cols-2 gap-4">
-                            <input type="tel" id="staff-1-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                            <input type="email" id="staff-1-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                            <input type="tel" id="staff-1-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                            <input type="email" id="staff-1-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
                         </div>
                     </div>
                     <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
                         <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Admin Staff 2</p>
-                        <input type="text" id="staff-2-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <input type="text" id="staff-2-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
                         <div class="grid grid-cols-2 gap-4">
-                            <input type="tel" id="staff-2-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                            <input type="email" id="staff-2-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                            <input type="tel" id="staff-2-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                            <input type="email" id="staff-2-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
                         </div>
                     </div>
                     <button onclick="window.submitAdminSignup()" class="w-full mt-2 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Register Estate</button>
@@ -929,6 +1061,7 @@
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
             await window.captureEstateLocation(true);
         };
 
@@ -953,28 +1086,51 @@
         };
 
         window.submitAdminSignup = async function() {
-            const estateName = document.getElementById('estate-name')?.value;
-            const address = document.getElementById('estate-address')?.value;
-            const gpsLocation = document.getElementById('estate-gps')?.value;
-            const email = document.getElementById('estate-email')?.value;
-            const phone = document.getElementById('estate-phone')?.value;
-            const password = document.getElementById('estate-password')?.value;
-            const staffMembers = [
-                {
-                    name: document.getElementById('staff-1-name')?.value,
-                    phone: document.getElementById('staff-1-phone')?.value,
-                    email: document.getElementById('staff-1-email')?.value
-                },
-                {
-                    name: document.getElementById('staff-2-name')?.value,
-                    phone: document.getElementById('staff-2-phone')?.value,
-                    email: document.getElementById('staff-2-email')?.value
-                }
-            ].filter(staff => toStr(staff.name) || toStr(staff.phone) || toStr(staff.email));
+            const estateName = readTextField('estate-name', 'Estate name', {
+                min: 3,
+                max: 80,
+                pattern: /^[a-zA-Z0-9 .,'&()/-]+$/,
+                patternMessage: 'Estate name contains invalid characters'
+            });
+            if (!estateName) return;
+            const address = readTextField('estate-address', 'Estate address', { min: 8, max: 180 });
+            if (!address) return;
+            const gpsLocation = toStr(document.getElementById('estate-gps')?.value);
+            const email = readEmailField('estate-email', 'Estate email');
+            if (!email) return;
+            const phone = readPhoneField('estate-phone', 'Estate phone');
+            if (!phone) return;
+            const password = readPasswordField('estate-password', 'Password', { min: 6, max: 64 });
+            if (!password) return;
 
-            if (!estateName || !address || !email || !phone || !password || !staffMembers.length) {
-                return window.showToast('Please complete the estate and staff details');
+            const staffMembers = [];
+            for (const index of [1, 2]) {
+                const nameValue = toStr(document.getElementById(`staff-${index}-name`)?.value);
+                const phoneValue = normalizePhone(document.getElementById(`staff-${index}-phone`)?.value);
+                const emailValue = toStr(document.getElementById(`staff-${index}-email`)?.value);
+                const hasAnyValue = !!(nameValue || phoneValue || emailValue);
+                if (!hasAnyValue) continue;
+
+                const staffName = readTextField(`staff-${index}-name`, `Staff ${index} name`, {
+                    min: 2,
+                    max: 80,
+                    pattern: /^[a-zA-Z .'-]+$/,
+                    patternMessage: `Staff ${index} name contains invalid characters`
+                });
+                if (!staffName) return;
+                const staffPhone = readPhoneField(`staff-${index}-phone`, `Staff ${index} phone`);
+                if (!staffPhone) return;
+                const staffEmail = readEmailField(`staff-${index}-email`, `Staff ${index} email`);
+                if (!staffEmail) return;
+
+                staffMembers.push({
+                    name: staffName,
+                    phone: staffPhone,
+                    email: staffEmail
+                });
             }
+
+            if (!staffMembers.length) return window.showToast('Add at least one valid staff member');
 
             const passwordHash = await hashPassword(password);
             const signupPayload = {
@@ -1932,6 +2088,7 @@
 
         window.addEventListener('load', async () => {
             lucide.createIcons();
+            applyInputGuards(document);
             try {
                 initMap();
             } catch (error) {
@@ -2014,7 +2171,7 @@
             const content = `
                 <h2 class="text-2xl font-bold mb-6 text-rose-600">Log Disbursement</h2>
                 <div class="space-y-4">
-                    <input type="text" id="disburse-title" placeholder="Expense Description" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
+                    <input type="text" id="disburse-title" placeholder="Expense Description" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" data-trim-input maxlength="100">
                     <input type="number" id="disburse-amount" placeholder="Amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
                     
                     <select id="disburse-vendor" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
@@ -2035,14 +2192,15 @@
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.openAddPoll = function() {
             const content = `
                 <h2 class="text-2xl font-bold mb-6 text-emerald-600">Create Voting Project</h2>
                 <div class="space-y-4">
-                    <input type="text" id="poll-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100">
-                    <textarea id="poll-desc" placeholder="Detailed Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100 h-24 resize-none"></textarea>
+                    <input type="text" id="poll-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100" data-trim-input maxlength="100">
+                    <textarea id="poll-desc" placeholder="Detailed Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-100 h-24 resize-none" data-trim-input maxlength="280"></textarea>
                     
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2 mb-1 block">Vote Dateline</label>
@@ -2054,14 +2212,15 @@
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.openAddCampaign = function() {
             const content = `
                 <h2 class="text-2xl font-bold mb-6 text-indigo-600">New Funding Project</h2>
                 <div class="space-y-4">
-                    <input type="text" id="camp-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <textarea id="camp-desc" placeholder="Project Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none"></textarea>
+                    <input type="text" id="camp-title" placeholder="Project Title" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
+                    <textarea id="camp-desc" placeholder="Project Description..." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 h-24 resize-none" data-trim-input maxlength="280"></textarea>
                     <input type="number" id="camp-target" placeholder="Target Amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
                     
                     <div>
@@ -2074,6 +2233,7 @@
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.openFundCampaignModal = function(id) {
@@ -2087,7 +2247,7 @@
                     <h2 class="text-2xl font-bold mb-2">Fund Project</h2>
                     <p class="text-gray-500 text-sm mb-6">Contribute to: <span class="font-bold text-gray-800">${campaign.title}</span></p>
                     
-                    <input type="number" id="fund-amount" placeholder="Enter amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 mb-6 text-center text-lg">
+                    <input type="number" id="fund-amount" placeholder="Enter amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 mb-6 text-center text-lg" min="1" step="0.01" inputmode="decimal">
                     
                     <button onclick="window.processFunding('${id}')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Make Contribution</button>
                 </div>
@@ -2095,20 +2255,21 @@
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             lucide.createIcons();
+            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.openAddResident = function() {
             document.getElementById('modal-content').innerHTML = `
                 <h2 class="text-2xl font-bold mb-6">New Resident</h2>
                 <div class="space-y-4">
-                    <input type="text" id="res-name" placeholder="Full Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="text" id="res-name" placeholder="Full Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
                     <div class="grid grid-cols-2 gap-4">
-                        <input type="text" id="res-house" placeholder="House No." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                        <input type="text" id="res-flat" placeholder="Flat/Unit" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <input type="text" id="res-house" placeholder="House No." class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="20">
+                        <input type="text" id="res-flat" placeholder="Flat/Unit" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="20">
                     </div>
-                    <input type="text" id="res-street" placeholder="Street Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="tel" id="res-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="email" id="res-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="text" id="res-street" placeholder="Street Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120">
+                    <input type="tel" id="res-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                    <input type="email" id="res-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
                     <div class="bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-2xl px-4 py-3 text-xs font-bold">
                         Resident login password will be the last 4 digits of their phone number.
                     </div>
@@ -2117,16 +2278,17 @@
                 </div>
             `;
             document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.openAddVendor = function() {
             document.getElementById('modal-content').innerHTML = `
                 <h2 class="text-2xl font-bold mb-6">Partner Onboarding</h2>
                 <div class="space-y-4">
-                    <input type="text" id="ven-name" placeholder="Company/Individual Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="tel" id="ven-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="email" id="ven-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                    <input type="text" id="ven-address" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="text" id="ven-name" placeholder="Company/Individual Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
+                    <input type="tel" id="ven-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                    <input type="email" id="ven-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
+                    <input type="text" id="ven-address" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="140">
                     
                     <select id="ven-service" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
                         <option value="Security">Security Services</option>
@@ -2135,12 +2297,13 @@
                         <option value="Sanitation">Sanitation</option>
                     </select>
                     
-                    <input type="text" id="ven-sub" placeholder="Sub-Category (e.g. Plumbing, Guards)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                    <input type="text" id="ven-sub" placeholder="Sub-Category (e.g. Plumbing, Guards)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="60">
 
                     <button onclick="window.saveVendor()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Vendor</button>
                 </div>
             `;
             document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.confirmPayment = async () => {
@@ -2196,11 +2359,14 @@
         };
 
         window.saveDisbursement = async () => {
-            const title = document.getElementById('disburse-title').value;
-            const amount = parseFloat(document.getElementById('disburse-amount').value);
-            const vendorId = document.getElementById('disburse-vendor').value;
-            const category = document.getElementById('disburse-category').value;
-            if(!title || !amount || !vendorId) return window.showToast("Please fill all fields!");
+            const title = readTextField('disburse-title', 'Expense description', { min: 3, max: 100 });
+            if (!title) return;
+            const amount = readCurrencyField('disburse-amount', 'Amount');
+            if (amount === false) return;
+            const vendorId = toStr(document.getElementById('disburse-vendor').value);
+            const category = toStr(document.getElementById('disburse-category').value);
+            if(!vendorId) return window.showToast("Select a vendor");
+            if(!category) return window.showToast("Select a category");
 
             if(!supabase) {
                 state.totalBalance -= amount;
@@ -2241,10 +2407,12 @@
         };
 
         window.savePoll = async () => {
-            const title = document.getElementById('poll-title').value;
-            const desc = document.getElementById('poll-desc').value;
-            const date = document.getElementById('poll-date').value;
-            if(!title || !date) return window.showToast("Please provide title and dateline");
+            const title = readTextField('poll-title', 'Project title', { min: 3, max: 100 });
+            if (!title) return;
+            const desc = readOptionalTextField('poll-desc', 'Project description', { max: 280 });
+            if (desc === false) return;
+            const date = toStr(document.getElementById('poll-date').value);
+            if(!date) return window.showToast("Please provide title and dateline");
 
             if(!supabase) {
                 upsertLocalRecord('polls', withCurrentEstate({ id: generateId(), title, description: desc, totalResidents: state.residents.length || 1, agree: 0, disagree: 0, ends: date, status: 'active', voted: false }));
@@ -2272,11 +2440,14 @@
         };
 
         window.saveCampaign = async () => {
-            const title = document.getElementById('camp-title').value;
-            const desc = document.getElementById('camp-desc').value;
-            const target = parseFloat(document.getElementById('camp-target').value);
-            const date = document.getElementById('camp-date').value;
-            if(!title || !target || !date) return window.showToast("Provide title, target & dateline");
+            const title = readTextField('camp-title', 'Project title', { min: 3, max: 100 });
+            if (!title) return;
+            const desc = readOptionalTextField('camp-desc', 'Project description', { max: 280 });
+            if (desc === false) return;
+            const target = readCurrencyField('camp-target', 'Target amount');
+            if (target === false) return;
+            const date = toStr(document.getElementById('camp-date').value);
+            if(!date) return window.showToast("Provide title, target & dateline");
 
             if(!supabase) {
                 upsertLocalRecord('campaigns', withCurrentEstate({ id: generateId(), title, description: desc, targetAmount: target, raisedAmount: 0, ends: date, status: 'active', contributors: 0 }));
@@ -2304,8 +2475,8 @@
         };
 
         window.processFunding = async (id) => {
-            const amount = parseFloat(document.getElementById('fund-amount').value);
-            if(!amount || amount <= 0) return window.showToast("Enter a valid amount");
+            const amount = readCurrencyField('fund-amount', 'Contribution amount');
+            if (amount === false) return;
             
             const campaign = state.campaigns.find(c => c.id === id);
             if(campaign) {
@@ -2351,12 +2522,23 @@
         };
 
         window.saveResident = async () => {
-            const name = document.getElementById('res-name').value;
-            const house = document.getElementById('res-house').value;
-            const flat = document.getElementById('res-flat').value;
-            const street = document.getElementById('res-street').value;
-            const phone = document.getElementById('res-phone').value;
-            const email = document.getElementById('res-email').value;
+            const name = readTextField('res-name', 'Resident name', {
+                min: 2,
+                max: 80,
+                pattern: /^[a-zA-Z .'-]+$/,
+                patternMessage: 'Resident name contains invalid characters'
+            });
+            if (!name) return;
+            const house = readTextField('res-house', 'House number', { min: 1, max: 20, pattern: /^[a-zA-Z0-9/-]+$/ });
+            if (!house) return;
+            const flat = readOptionalTextField('res-flat', 'Flat or unit', { max: 20, pattern: /^[a-zA-Z0-9/-]+$/, patternMessage: 'Flat or unit contains invalid characters' });
+            if (flat === false) return;
+            const street = readTextField('res-street', 'Street address', { min: 3, max: 120 });
+            if (!street) return;
+            const phone = readPhoneField('res-phone', 'Phone number');
+            if (!phone) return;
+            const email = readEmailField('res-email', 'Email address', { required: false });
+            if (email === false) return;
 
             const defaultPassword = getLastFourDigits(phone);
             if(!name || !house || !street || !phone || defaultPassword.length < 4) {
@@ -2387,14 +2569,19 @@
         };
 
         window.saveVendor = async () => {
-            const name = document.getElementById('ven-name').value;
-            const contact = document.getElementById('ven-phone').value;
-            const email = document.getElementById('ven-email').value;
-            const address = document.getElementById('ven-address').value;
-            const service = document.getElementById('ven-service').value;
-            const subCategory = document.getElementById('ven-sub').value;
+            const name = readTextField('ven-name', 'Vendor name', { min: 2, max: 100 });
+            if (!name) return;
+            const contact = readPhoneField('ven-phone', 'Vendor phone');
+            if (!contact) return;
+            const email = readEmailField('ven-email', 'Vendor email', { required: false });
+            if (email === false) return;
+            const address = readOptionalTextField('ven-address', 'Vendor address', { max: 140 });
+            if (address === false) return;
+            const service = toStr(document.getElementById('ven-service').value);
+            const subCategory = readOptionalTextField('ven-sub', 'Sub-category', { max: 60 });
+            if (subCategory === false) return;
 
-            if(!name || !contact) return window.showToast('Fill vendor name and phone');
+            if(!service) return window.showToast('Select a vendor service');
             
             if(!supabase) {
                 upsertLocalRecord('vendors', withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] }));
