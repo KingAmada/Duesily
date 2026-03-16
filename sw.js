@@ -1,9 +1,11 @@
-const CACHE_NAME = 'duesily-shell-v1';
+const CACHE_NAME = 'duesily-shell-v2';
 const APP_SHELL = [
   './',
   './index.html',
+  './config.js',
   './manifest.webmanifest',
-  './icons/icon.svg'
+  './icons/Fav Icon.png',
+  './icons/In-app Logo.png'
 ];
 
 self.addEventListener('install', event => {

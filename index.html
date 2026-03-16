@@ -315,6 +315,7 @@
         // =================================================================================
         const SUPABASE_URL = window.DUESILY_CONFIG?.supabaseUrl || '';
         const SUPABASE_ANON_KEY = window.DUESILY_CONFIG?.supabaseAnonKey || '';
+        const WIX_BACKEND_BASE_URL = window.DUESILY_CONFIG?.wixBackendBaseUrl || '';
 
         let supabase = null;
         let deferredInstallPrompt = null;
@@ -520,6 +521,66 @@
             }
 
             return sanitizeForState(data);
+        }
+
+        function getDuesilyCreateAccountEndpoint() {
+            const baseUrl = toStr(WIX_BACKEND_BASE_URL).replace(/\/$/, '');
+            if (!baseUrl) return '';
+            if (baseUrl.includes('/_functions/')) {
+                return `${baseUrl}/apiDuesilyCreateAccount`;
+            }
+            return `${baseUrl}/_functions/apiDuesilyCreateAccount`;
+        }
+
+        async function requestEstateVirtualAccount(estateId) {
+            const endpoint = getDuesilyCreateAccountEndpoint();
+            if (!endpoint) {
+                throw new Error('Missing Wix backend URL. Add wixBackendBaseUrl to config.js.');
+            }
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ estateId })
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                throw new Error(data.message || 'Could not create estate payment account');
+            }
+
+            return sanitizeForState(data);
+        }
+
+        async function ensureEstateVirtualAccount(estateId, { force = false } = {}) {
+            const targetEstateId = normalizeId(estateId);
+            if (!targetEstateId) throw new Error('Estate ID is required');
+
+            const estateRecord = await fetchEstateRecordById(targetEstateId);
+            if (!estateRecord) throw new Error('Estate record not found');
+
+            const existingAccountNumber = toStr(estateRecord.walletAccountNumber);
+            if (!force && existingAccountNumber) {
+                if (normalizeId(state.currentEstateId) === targetEstateId) {
+                    state.currentEstateRecord = estateRecord;
+                }
+                return estateRecord;
+            }
+
+            const accountResult = await requestEstateVirtualAccount(targetEstateId);
+            const refreshedEstate = await fetchEstateRecordById(targetEstateId);
+            const mergedEstate = sanitizeForState({
+                ...(refreshedEstate || estateRecord),
+                walletAccountNumber: toStr(accountResult.walletAccountNumber) || toStr(refreshedEstate?.walletAccountNumber),
+                walletStatus: toStr(accountResult.walletStatus) || toStr(refreshedEstate?.walletStatus) || 'active',
+                accountName: toStr(accountResult.accountName) || toStr(refreshedEstate?.accountName) || toStr(estateRecord.accountName)
+            });
+
+            if (normalizeId(state.currentEstateId) === targetEstateId) {
+                state.currentEstateRecord = mergedEstate;
+            }
+
+            return mergedEstate;
         }
 
         async function fetchEstateRecordById(estateId) {
@@ -853,6 +914,14 @@
             await fetchInitialData();
             await teardownRealtimeListeners();
             setupRealtimeListeners();
+
+            if (state.userType === 'admin' && !toStr(state.currentEstateRecord?.walletAccountNumber) && WIX_BACKEND_BASE_URL) {
+                try {
+                    state.currentEstateRecord = await ensureEstateVirtualAccount(normalizedEstateId);
+                } catch (error) {
+                    console.error('Failed to provision estate virtual account:', error);
+                }
+            }
         }
 
         function updateGlobalState() {
@@ -1529,7 +1598,13 @@
                 createdAt: new Date().toISOString()
             };
 
-            await createEstateSignup(signupPayload);
+            const createdEstate = await createEstateSignup(signupPayload);
+            try {
+                await ensureEstateVirtualAccount(createdEstate.id, { force: true });
+            } catch (error) {
+                console.error('Failed to provision estate account after signup:', error);
+                window.showToast(`Estate created, but payment account setup failed: ${error.message}`);
+            }
             document.getElementById('login-email').value = email;
             document.getElementById('login-pass').value = password;
             window.closeModal();
@@ -1665,10 +1740,26 @@
             window.switchTab('voting');
         };
 
-        window.openPaymentModal = function() {
+        window.openPaymentModal = async function() {
             const estateRecord = state.currentEstateRecord || {};
-            const accNum = toStr(estateRecord.walletAccountNumber) || "5770" + Math.floor(100000 + Math.random() * 900000);
-            const accountName = toStr(estateRecord.accountName) || getCurrentEstateName();
+            let accountRecord = estateRecord;
+
+            if (!toStr(accountRecord.walletAccountNumber) && state.userType === 'admin' && getCurrentEstateId()) {
+                try {
+                    window.showToast('Linking estate payment account...');
+                    accountRecord = await ensureEstateVirtualAccount(getCurrentEstateId(), { force: true });
+                } catch (error) {
+                    console.error('Failed to generate estate payment account:', error);
+                    return window.showToast(error.message || 'Could not link estate payment account');
+                }
+            }
+
+            const accNum = toStr(accountRecord.walletAccountNumber);
+            const accountName = toStr(accountRecord.accountName) || getCurrentEstateName();
+            if (!accNum) {
+                return window.showToast('Estate payment account is not ready yet. Contact the estate admin.');
+            }
+
             const content = `
                 <div class="text-center">
                     <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-sm">
