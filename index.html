@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Duesily - Management Portal</title>
     <meta name="description" content="Duesily is a smart estate management portal for dues collection, resident engagement, vendors, and community projects.">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#1768ff">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Duesily">
@@ -13,6 +13,29 @@
     <link rel="icon" href="icons/Fav%20Icon.png" type="image/png">
     <link rel="apple-touch-icon" href="icons/Fav%20Icon.png">
     <script src="./config.js"></script>
+    <script>
+        tailwind = window.tailwind || {};
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        indigo: {
+                            50: '#edf7ff',
+                            100: '#d7efff',
+                            200: '#b5e4ff',
+                            300: '#7fd4ff',
+                            400: '#37bfff',
+                            500: '#1768ff',
+                            600: '#0e4fe0',
+                            700: '#0b3bb4',
+                            800: '#0b168f',
+                            900: '#08115f'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -22,8 +45,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #4f46e5;
-            --bg-main: #fcfdfe;
+            --primary: #1768ff;
+            --primary-dark: #0b168f;
+            --primary-cyan: #2ee6f2;
+            --bg-main: #f7fbff;
         }
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
@@ -41,7 +66,7 @@
             color: var(--primary);
         }
         .nav-item.active .icon-box {
-            background-color: #f0f1ff;
+            background-color: #edf7ff;
         }
         .nav-item {
             transition: transform 0.24s ease, color 0.24s ease;
@@ -108,8 +133,8 @@
             .white-card:hover,
             .estate-switch-card:hover {
                 transform: translateY(-6px);
-                box-shadow: 0 14px 36px rgba(79, 70, 229, 0.12);
-                border-color: rgba(99, 102, 241, 0.18);
+                box-shadow: 0 14px 36px rgba(23, 104, 255, 0.12);
+                border-color: rgba(23, 104, 255, 0.18);
             }
             button:hover,
             a:hover,
@@ -121,13 +146,13 @@
             h3:hover,
             h4:hover,
             .interactive-text:hover {
-                color: #312e81;
+                color: var(--primary-dark);
                 letter-spacing: 0.01em;
             }
             .app-brandmark:hover,
             .brand-wordmark:hover {
                 transform: translateY(-2px) scale(1.01);
-                filter: drop-shadow(0 14px 22px rgba(79, 70, 229, 0.12));
+                filter: drop-shadow(0 14px 22px rgba(23, 104, 255, 0.16));
             }
         }
         @keyframes pulse-ring {
@@ -2527,7 +2552,7 @@
                     <div class="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 text-left mb-4">
                         <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-1">Automatic matching</p>
                         <p class="text-sm text-emerald-700">${state.userType === 'resident'
-                            ? 'Kindly transfers to the above account.'
+                            ? 'Transfers into this account are matched to your resident profile automatically.'
                             : 'Transfers into this account are recorded against the estate automatically.'}</p>
                     </div>
 
