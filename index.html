@@ -539,6 +539,15 @@
             return `${baseUrl}/_functions/apiDuesilyCreateResidentAccount`;
         }
 
+        function getDuesilyCampaignContributionAccountEndpoint() {
+            const baseUrl = toStr(WIX_BACKEND_BASE_URL).replace(/\/$/, '');
+            if (!baseUrl) return '';
+            if (baseUrl.includes('/_functions/')) {
+                return `${baseUrl}/apiDuesilyCreateCampaignContributionAccount`;
+            }
+            return `${baseUrl}/_functions/apiDuesilyCreateCampaignContributionAccount`;
+        }
+
         async function requestEstateVirtualAccount(estateId) {
             const endpoint = getDuesilyCreateAccountEndpoint();
             if (!endpoint) {
@@ -605,6 +614,26 @@
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.success === false) {
                 throw new Error(data.message || 'Could not create resident payment account');
+            }
+
+            return sanitizeForState(data);
+        }
+
+        async function requestCampaignContributionAccount(residentId, campaignId) {
+            const endpoint = getDuesilyCampaignContributionAccountEndpoint();
+            if (!endpoint) {
+                throw new Error('Missing Wix backend URL. Add wixBackendBaseUrl to config.js.');
+            }
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ residentId, campaignId })
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                throw new Error(data.message || 'Could not prepare contribution account');
             }
 
             return sanitizeForState(data);
@@ -3590,26 +3619,64 @@
             applyInputGuards(document.getElementById('modal-content'));
         };
 
-        window.openFundCampaignModal = function(id) {
+        window.openFundCampaignModal = async function(id) {
             const campaign = state.campaigns.find(c => c.id === id);
             if(!campaign) return;
+            const resident = getCurrentResident();
+            if (!resident?.id) return window.showToast('Resident account could not be resolved');
+
+            let contributionAccount = null;
+            try {
+                window.showToast('Preparing contribution account...');
+                contributionAccount = await requestCampaignContributionAccount(resident.id, id);
+            } catch (error) {
+                console.error('Failed to prepare contribution account:', error);
+                return window.showToast(error.message || 'Could not prepare contribution account');
+            }
+
+            const accNum = toStr(contributionAccount.walletAccountNumber);
+            const accountName = toStr(contributionAccount.accountName) || `${resident.name} Contribution`;
+            if (!accNum) return window.showToast('Contribution account is not ready yet');
+
             const content = `
                 <div class="text-center">
                     <div class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-sm">
                         <i data-lucide="wallet" class="w-8 h-8"></i>
                     </div>
                     <h2 class="text-2xl font-bold mb-2">Fund Project</h2>
-                    <p class="text-gray-500 text-sm mb-6">Contribute to: <span class="font-bold text-gray-800">${campaign.title}</span></p>
-                    
-                    <input type="number" id="fund-amount" placeholder="Enter amount (₦)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 mb-6 text-center text-lg" min="1" step="0.01" inputmode="decimal">
-                    
-                    <button onclick="window.processFunding('${id}')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Make Contribution</button>
+                    <p class="text-gray-500 text-sm mb-6">Transfer your contribution to this dedicated account for <span class="font-bold text-gray-800">${campaign.title}</span>.</p>
+
+                    <div class="bg-gray-50 rounded-[1.5rem] p-5 text-left space-y-4 mb-6 border border-gray-100">
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Bank Name</p>
+                            <p class="font-bold text-gray-800">Stanbic IBTC Bank</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Account Name</p>
+                            <p class="font-bold text-gray-800">${accountName}</p>
+                        </div>
+                        <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
+                            <div>
+                                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Account Number</p>
+                                <p class="font-black text-xl text-indigo-600 tracking-wider">${accNum}</p>
+                            </div>
+                            <button onclick="window.copyAccountNum('${accNum}')" class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform">
+                                <i data-lucide="copy" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 text-left mb-4">
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-1">Automatic documentation</p>
+                        <p class="text-sm text-emerald-700">Any transfer to this account will be recorded automatically as your contribution to this project.</p>
+                    </div>
+
+                    <button onclick="window.processFunding('${id}')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">Refresh Contribution Status</button>
                 </div>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             lucide.createIcons();
-            applyInputGuards(document.getElementById('modal-content'));
         };
 
         window.openAddResident = function() {
@@ -3782,37 +3849,15 @@
         };
 
         window.processFunding = async (id) => {
-            const amount = readCurrencyField('fund-amount', 'Contribution amount');
-            if (amount === false) return;
-            
-            const campaign = state.campaigns.find(c => c.id === id);
-            if(campaign) {
-                let rAmt = campaign.raisedAmount + amount;
-                let stat = 'active';
-                let endDt = campaign.ends;
-                if(rAmt >= campaign.targetAmount) { rAmt = campaign.targetAmount; stat = 'completed'; endDt = 'Closed'; }
-                
-                if (!ensureOnlineMutation('record contributions')) return;
+            if (!ensureOnlineMutation('refresh contribution records')) return;
 
-                const campaignUpdate = await supabase.from('duesily_campaigns').update({ raisedAmount: rAmt, contributors: campaign.contributors + 1, status: stat, ends: endDt }).eq('id', id).eq('estateId', getCurrentEstateId()).select().single();
-                if (campaignUpdate.error) {
-                    console.error('Failed to update campaign:', campaignUpdate.error);
-                    return window.showToast('Could not update contribution');
-                }
-
-                const residentName = getCurrentResidentName();
-                const incomePayload = withCurrentEstate({ id: generateId(), residentId: getCurrentResidentId(), title: state.userType === 'admin' ? 'Admin Contribution' : residentName, category: 'Project Fee', amount: amount, date: new Date().toISOString(), icon: 'briefcase', color: 'bg-emerald-500', from: state.userType === 'admin' ? 'Admin' : residentName, status: 'completed' });
-                const incomeInsert = await supabase.from('duesily_incomes').insert([incomePayload]).select().single();
-                if (incomeInsert.error) {
-                    console.error('Failed to record contribution income:', incomeInsert.error);
-                    return window.showToast('Contribution saved but receipt could not be recorded');
-                }
-
-                upsertLocalRecord('campaigns', campaignUpdate.data);
-                upsertLocalRecord('incomes', incomeInsert.data);
-                updateGlobalState();
-            }
-            window.showToast("Contribution Successful!");
+            await Promise.all([
+                refreshTableData('campaigns'),
+                refreshTableData('incomes'),
+                refreshTableData('residents')
+            ]);
+            updateGlobalState();
+            window.showToast('Contribution records refreshed. If your transfer just landed, it may take a moment to appear.');
             window.closeModal();
         };
 
