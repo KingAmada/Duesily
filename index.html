@@ -229,10 +229,6 @@
 <body class="pb-32">
 
     <!-- Global Loading Overlay -->
-    <div id="global-loader" class="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center transition-opacity duration-500">
-        <div class="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-        <p class="text-indigo-600 font-bold text-sm tracking-widest uppercase">Connecting to Supabase...</p>
-    </div>
 
     <!-- Homepage / Login View -->
     <div id="login-view" class="bg-white min-h-screen block">
@@ -591,7 +587,7 @@
                     </div>
                 </div>
                 <div class="text-center border-t border-slate-800 pt-6 sm:pt-8 text-[10px] sm:text-xs">
-                    Duesily is a product of Amada Technologies Ltd.<br><br>© 2026 Duesily. All rights reserved.
+                    Duesily Property Tech is a product of Duesily Technologies Ltd.<br><br>© 2026 Duesily. All rights reserved.
                 </div>
             </div>
         </footer>
@@ -2609,6 +2605,12 @@
             if(document.getElementById('app-container').classList.contains('hidden') === false) {
                 window.switchTab(state.activeTab);
             }
+        }
+
+        function getEstateAvailableBalance() {
+            const totalIncomes = state.incomes.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+            const totalExpenses = state.expenses.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+            return totalIncomes - totalExpenses;
         }
 
         // --- Helper Function to generate UUIDs for client inserts ---
@@ -5884,6 +5886,13 @@
             if (!title) return;
             const amount = readCurrencyField('disburse-amount', 'Amount');
             if (amount === false) return;
+            const availableBalance = getEstateAvailableBalance();
+            if (availableBalance <= 0) {
+                return window.showToast('Cannot log a disbursement when the estate wallet balance is zero.');
+            }
+            if (amount > availableBalance) {
+                return window.showToast(`Insufficient wallet balance. Available balance is ${formatCurrency(availableBalance)}.`);
+            }
             const vendorId = toStr(document.getElementById('disburse-vendor').value);
             const vendorAccountSelection = toStr(document.getElementById('disburse-vendor-account')?.value);
             const category = toStr(document.getElementById('disburse-category').value);
