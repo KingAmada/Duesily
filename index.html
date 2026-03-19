@@ -767,6 +767,223 @@
             campaigns: []
         };
 
+        const EXPENSE_SUBCATEGORY_MAP = {
+            'Operations': [
+                'Security',
+                'Cleaning / Sanitation',
+                'Waste Disposal',
+                'Gardening / Landscaping',
+                'Estate Administration',
+                'Office Supplies',
+                'Staff Salaries / Wages',
+                'Staff Welfare / Uniforms',
+                'Pest Control',
+                'Tree Trimming',
+                'Software / Tech Subscriptions',
+                'Fuel Logistics / Transport',
+                'Vehicle Maintenance',
+                'Consumables',
+                'Staff Training'
+            ],
+            'Utilities': [
+                'Electricity',
+                'Diesel / Fuel',
+                'Generator Maintenance',
+                'Water Supply',
+                'Internet / Telecoms',
+                'Streetlight Power'
+            ],
+            'Repairs & Maintenance': [
+                'Road Repairs',
+                'Drainage Maintenance',
+                'Plumbing Repairs',
+                'Electrical Repairs',
+                'Generator Repairs',
+                'Borehole / Water System Repairs',
+                'Gate / Fence Repairs',
+                'Building / Common Area Maintenance',
+                'CCTV / Access Control Maintenance',
+                'Visitor Management System'
+            ],
+            'Safety & Compliance': [
+                'Fire Safety Equipment',
+                'Safety Inspections',
+                'Insurance',
+                'Legal / Compliance Fees',
+                'Permits / Statutory Fees',
+                'Emergency Response Expenses'
+            ],
+            'Community & Governance': [
+                'Meetings / AGM Expenses',
+                'Resident Communication / Notices',
+                'Voting / Polling Costs',
+                'Events / Community Engagement',
+                'Dispute Resolution / Mediation'
+            ],
+            'Projects / Capital Expenditure': [
+                'New Infrastructure Projects',
+                'Road Construction',
+                'Streetlight Installation',
+                'Security Upgrades',
+                'Water Expansion Projects',
+                'Landscaping Upgrades',
+                'Recreational Facilities',
+                'Estate Beautification',
+                'Drainage Expansion'
+            ],
+            'Financial': [
+                'Bank Charges',
+                'Payment Gateway Fees',
+                'Refunds / Reversals',
+                'Audit / Accounting Fees',
+                'Debt Recovery Costs',
+                'Contingency / Emergency Reserve',
+                'Bad Debt / Unpaid Dues Write-off'
+            ],
+            'Vendors & Outsourced Services': [
+                'Security Contractor',
+                'Cleaning Contractor',
+                'Waste Contractor',
+                'Facility Management Contractor',
+                'Technical Consultants'
+            ]
+        };
+
+        const STAFF_ROLE_OPTIONS = [
+            'Treasurer',
+            'Accountant',
+            'Estate Manager',
+            'Authorized Admin Staff',
+            'Chairman',
+            'Secretary',
+            'Finance Committee Lead'
+        ];
+
+        let estateSignupStaffCounter = 0;
+
+        function getStaffRoleOptionsHtml(selectedRole = '') {
+            const normalizedSelected = toStr(selectedRole);
+            return STAFF_ROLE_OPTIONS
+                .map(role => `<option value="${role}" ${normalizedSelected === role ? 'selected' : ''}>${role}</option>`)
+                .join('');
+        }
+
+        function normalizeStaffRecord(staff = {}) {
+            const fallbackIdSeed = [
+                toStr(staff.email).toLowerCase(),
+                normalizePhone(staff.phone),
+                toStr(staff.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+            ].find(Boolean);
+            return {
+                id: toStr(staff.id) || (fallbackIdSeed ? `staff-${fallbackIdSeed}` : generateId()),
+                name: toStr(staff.name),
+                phone: normalizePhone(staff.phone),
+                email: toStr(staff.email).toLowerCase(),
+                role: STAFF_ROLE_OPTIONS.includes(toStr(staff.role)) ? toStr(staff.role) : 'Authorized Admin Staff'
+            };
+        }
+
+        function getEstateAdminStaffMembers(estateRecord = null) {
+            const record = estateRecord || state.currentEstateRecord || getCurrentAdminSession()?.account;
+            const staffMembers = Array.isArray(record?.adminStaff) ? record.adminStaff : [];
+            return staffMembers.map(normalizeStaffRecord);
+        }
+
+        function isCurrentUserSuperAdmin() {
+            return !!getCurrentAdminSession()?.isPrimaryAccount;
+        }
+
+        function getCurrentAdminDisplayRole() {
+            const adminSession = getCurrentAdminSession();
+            if (!adminSession) return '';
+            return adminSession.isPrimaryAccount ? 'Super Admin' : toStr(adminSession.staff?.role) || 'Admin Staff';
+        }
+
+        function getEstateApprovalActors() {
+            const adminSession = getCurrentAdminSession();
+            const actors = [];
+            if (adminSession?.account) {
+                actors.push({
+                    id: `primary-${normalizeId(adminSession.account.id)}`,
+                    type: 'primary',
+                    name: toStr(adminSession.account.estateName) || 'Estate Management',
+                    role: 'Super Admin',
+                    email: toStr(adminSession.account.email).toLowerCase(),
+                    phone: normalizePhone(adminSession.account.phone)
+                });
+            }
+
+            getEstateAdminStaffMembers().forEach(staff => {
+                actors.push({
+                    id: `staff-${normalizeId(staff.id)}`,
+                    type: 'staff',
+                    name: staff.name,
+                    role: staff.role,
+                    email: staff.email,
+                    phone: staff.phone
+                });
+            });
+
+            return actors.filter(actor => actor.name && (actor.email || actor.phone));
+        }
+
+        function getCurrentAdminActorKey() {
+            const adminSession = getCurrentAdminSession();
+            if (!adminSession) return '';
+            return adminSession.isPrimaryAccount
+                ? `primary-${normalizeId(adminSession.account?.id)}`
+                : `staff-${normalizeId(adminSession.staff?.id)}`;
+        }
+
+        function buildSignupStaffBlock(index, { required = false, staff = null } = {}) {
+            const blockTitle = required ? 'Core Approval Staff' : `Additional Admin Staff ${index}`;
+            const normalizedStaff = normalizeStaffRecord(staff || {});
+            return `
+                <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4 signup-staff-card" data-signup-staff-index="${index}">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">${blockTitle}</p>
+                        ${required ? '<span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">Required</span>' : `<button type="button" onclick="window.removeSignupStaffRow(${index})" class="text-[10px] font-bold text-rose-600">Remove</button>`}
+                    </div>
+                    <input type="text" id="staff-${index}-name" value="${escapeHtml(normalizedStaff.name)}" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
+                    <select id="staff-${index}-role" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <option value="">Select Designation...</option>
+                        ${getStaffRoleOptionsHtml(normalizedStaff.role)}
+                    </select>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="tel" id="staff-${index}-phone" value="${escapeHtml(normalizedStaff.phone)}" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                        <input type="email" id="staff-${index}-email" value="${escapeHtml(normalizedStaff.email)}" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
+                    </div>
+                </div>
+            `;
+        }
+
+        function getExpenseCategoryOptionsHtml() {
+            return Object.keys(EXPENSE_SUBCATEGORY_MAP)
+                .map(category => `<option value="${category}">${category}</option>`)
+                .join('');
+        }
+
+        function getExpenseSubcategoryOptionsHtml(category) {
+            const subcategories = EXPENSE_SUBCATEGORY_MAP[toStr(category)] || [];
+            return subcategories
+                .map(subCategory => `<option value="${subCategory}">${subCategory}</option>`)
+                .join('');
+        }
+
+        function getExpenseCategoryDisplay(expense) {
+            const category = toStr(expense?.category) || 'Expense';
+            const subCategory = toStr(expense?.subCategory);
+            return subCategory ? `${category} • ${subCategory}` : category;
+        }
+
+        function getApprovalActorOptionsHtml() {
+            const currentActorKey = getCurrentAdminActorKey();
+            return getEstateApprovalActors()
+                .filter(actor => actor.id !== currentActorKey)
+                .map(actor => `<option value="${actor.id}">${actor.name} • ${actor.role}</option>`)
+                .join('');
+        }
+
         function clearTenantCollections() {
             Object.keys(defaultRows).forEach(key => {
                 state[key] = [...defaultRows[key]];
@@ -881,6 +1098,31 @@
             if (error) {
                 console.error('Failed to create estate signup:', error);
                 throw new Error('Could not create estate account');
+            }
+
+            return sanitizeForState(data);
+        }
+
+        async function updateEstateSignup(estateId, updates) {
+            if (!supabase) {
+                throw new Error('Reconnect before saving estate staff');
+            }
+
+            const payload = {
+                ...updates,
+                updatedAt: new Date().toISOString()
+            };
+
+            const { data, error } = await supabase
+                .from(ESTATE_SIGNUPS_TABLE)
+                .update(payload)
+                .eq('id', estateId)
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Failed to update estate signup:', error);
+                throw new Error('Could not update estate profile');
             }
 
             return sanitizeForState(data);
@@ -1115,8 +1357,11 @@
                         staff: {
                             name: 'Estate Management',
                             email: signup.email,
-                            phone: signup.phone
-                        }
+                            phone: signup.phone,
+                            role: 'Super Admin',
+                            id: `primary-${normalizeId(signup.id)}`
+                        },
+                        isPrimaryAccount: true
                     };
                 }
 
@@ -1129,7 +1374,8 @@
                 if (matchedStaff) {
                     return {
                         account: signup,
-                        staff: matchedStaff
+                        staff: normalizeStaffRecord(matchedStaff),
+                        isPrimaryAccount: false
                     };
                 }
             }
@@ -1207,6 +1453,15 @@
 
         function getCurrentAdminSession() {
             return state.currentAdminSession || null;
+        }
+
+        function syncCurrentEstateRecord(updatedEstateRecord) {
+            const sanitizedRecord = sanitizeForState(updatedEstateRecord);
+            state.currentEstateRecord = sanitizedRecord;
+            if (state.currentAdminSession?.account && normalizeId(state.currentAdminSession.account.id) === normalizeId(sanitizedRecord?.id)) {
+                state.currentAdminSession.account = sanitizedRecord;
+            }
+            return sanitizedRecord;
         }
 
         function getCurrentEstateId() {
@@ -1962,21 +2217,15 @@
                         <input type="tel" id="estate-phone" placeholder="Estate Phone" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
                     </div>
                     <input type="password" id="estate-password" placeholder="Password" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" maxlength="64" autocomplete="new-password">
-                    <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
-                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Admin Staff 1</p>
-                        <input type="text" id="staff-1-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
-                        <div class="grid grid-cols-2 gap-4">
-                            <input type="tel" id="staff-1-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
-                            <input type="email" id="staff-1-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Approval Staff</p>
+                                <p class="text-xs text-gray-500 mt-1">Add at least one designated staff member who can approve disbursements.</p>
+                            </div>
+                            <button type="button" onclick="window.addSignupStaffRow()" class="px-3 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-100">Add Staff</button>
                         </div>
-                    </div>
-                    <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
-                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Admin Staff 2</p>
-                        <input type="text" id="staff-2-name" placeholder="Full Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
-                        <div class="grid grid-cols-2 gap-4">
-                            <input type="tel" id="staff-2-phone" placeholder="Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
-                            <input type="email" id="staff-2-email" placeholder="Email" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
-                        </div>
+                        <div id="signup-staff-list" class="space-y-4"></div>
                     </div>
                     <label class="flex items-start gap-3 bg-gray-50 rounded-2xl px-4 py-4 border border-gray-100 cursor-pointer">
                         <input type="checkbox" id="estate-legal-check" class="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
@@ -1993,7 +2242,22 @@
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             applyInputGuards(document.getElementById('modal-content'));
+            estateSignupStaffCounter = 0;
+            window.addSignupStaffRow({ required: true });
             await window.captureEstateLocation(true);
+        };
+
+        window.addSignupStaffRow = function({ required = false, staff = null } = {}) {
+            const container = document.getElementById('signup-staff-list');
+            if (!container) return;
+            estateSignupStaffCounter += 1;
+            container.insertAdjacentHTML('beforeend', buildSignupStaffBlock(estateSignupStaffCounter, { required, staff }));
+            applyInputGuards(container);
+        };
+
+        window.removeSignupStaffRow = function(index) {
+            const row = document.querySelector(`[data-signup-staff-index="${index}"]`);
+            if (row) row.remove();
         };
 
         window.captureEstateLocation = async function(silent = false) {
@@ -2035,12 +2299,15 @@
             if (!password) return;
             if (!readCheckboxField('estate-legal-check', 'Accept the T&C and Privacy Statement to continue')) return;
 
+            const staffRows = [...document.querySelectorAll('[data-signup-staff-index]')];
             const staffMembers = [];
-            for (const index of [1, 2]) {
+            for (const row of staffRows) {
+                const index = row.getAttribute('data-signup-staff-index');
                 const nameValue = toStr(document.getElementById(`staff-${index}-name`)?.value);
+                const roleValue = toStr(document.getElementById(`staff-${index}-role`)?.value);
                 const phoneValue = normalizePhone(document.getElementById(`staff-${index}-phone`)?.value);
                 const emailValue = toStr(document.getElementById(`staff-${index}-email`)?.value);
-                const hasAnyValue = !!(nameValue || phoneValue || emailValue);
+                const hasAnyValue = !!(nameValue || roleValue || phoneValue || emailValue);
                 if (!hasAnyValue) continue;
 
                 const staffName = readTextField(`staff-${index}-name`, `Staff ${index} name`, {
@@ -2054,15 +2321,31 @@
                 if (!staffPhone) return;
                 const staffEmail = readEmailField(`staff-${index}-email`, `Staff ${index} email`);
                 if (!staffEmail) return;
+                const staffRole = toStr(document.getElementById(`staff-${index}-role`)?.value);
+                if (!staffRole) return window.showToast(`Select Staff ${index} designation`);
 
-                staffMembers.push({
+                staffMembers.push(normalizeStaffRecord({
                     name: staffName,
                     phone: staffPhone,
-                    email: staffEmail
-                });
+                    email: staffEmail,
+                    role: staffRole
+                }));
             }
 
             if (!staffMembers.length) return window.showToast('Add at least one valid staff member');
+            const seenStaffContacts = new Set();
+            for (const staff of staffMembers) {
+                const staffEmailKey = `email:${toStr(staff.email).toLowerCase()}`;
+                const staffPhoneKey = `phone:${normalizePhone(staff.phone)}`;
+                if (toStr(staff.email).toLowerCase() === email.toLowerCase() || normalizePhone(staff.phone) === phone) {
+                    return window.showToast('Staff contacts must be different from the estate login email and phone');
+                }
+                if (seenStaffContacts.has(staffEmailKey) || seenStaffContacts.has(staffPhoneKey)) {
+                    return window.showToast('Each staff member must use a unique email and phone');
+                }
+                seenStaffContacts.add(staffEmailKey);
+                seenStaffContacts.add(staffPhoneKey);
+            }
             if (!ensureOnlineMutation('create estate accounts')) return;
             if (await estateSignupExists({ email, phone })) {
                 return window.showToast('An estate account with this email or phone already exists');
@@ -2079,7 +2362,8 @@
                 passwordHash,
                 adminStaff: staffMembers,
                 status: 'active',
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
             };
 
             let createdEstate;
@@ -2580,7 +2864,7 @@
                             [
                                 { label: 'Date', render: row => formatDate(row.date) },
                                 { label: 'Title', render: row => row.title || 'Expense' },
-                                { label: 'Category', render: row => row.category || 'Expense' },
+                                { label: 'Category', render: row => getExpenseCategoryDisplay(row) },
                                 { label: 'Approver', render: row => row.approver || 'N/A' },
                                 { label: 'Amount', render: row => formatCurrency(row.amount) }
                             ],
@@ -2957,7 +3241,7 @@
                     </div>
                     <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
                         <span class="text-xs font-bold text-gray-400 uppercase">Category</span>
-                        <span class="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${expense.category}</span>
+                        <span class="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${getExpenseCategoryDisplay(expense)}</span>
                     </div>
                     <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
                         <span class="text-xs font-bold text-gray-400 uppercase">Date of Record</span>
@@ -3300,7 +3584,7 @@
                                     </div>
                                     <div>
                                         <p class="font-bold text-sm text-gray-800">${state.financeType === 'income' ? getResidentSafeDisplayName(e.title, e.residentId) : e.title}</p>
-                                        <p class="text-[10px] text-gray-400 font-bold">${formatDate(e.date)} • ${e.category.toUpperCase()}</p>
+                                        <p class="text-[10px] text-gray-400 font-bold">${formatDate(e.date)} • ${(state.financeType === 'expense' ? getExpenseCategoryDisplay(e) : (e.category || 'Income')).toUpperCase()}</p>
                                     </div>
                                 </div>
                                 <p class="font-bold text-sm ${state.financeType === 'expense' ? 'text-gray-800' : 'text-emerald-600'}">${state.financeType === 'expense' ? '-' : '+'}${formatCurrency(e.amount)}</p>
@@ -3444,6 +3728,25 @@
                     </button>
                 </div>
 
+                <div class="flex justify-between items-center mb-4 px-2">
+                    <h4 class="font-bold text-gray-800">Admin Staff</h4>
+                    ${isCurrentUserSuperAdmin() ? `
+                    <button onclick="window.openAddAdminStaff()" class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-100 active:scale-95 transition-transform">Add Staff</button>
+                    ` : `<span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Super admin only</span>`}
+                </div>
+                <div class="space-y-3 mb-8">
+                    ${getEstateAdminStaffMembers().length ? getEstateAdminStaffMembers().map(staff => `
+                        <div class="white-card p-4 flex items-center justify-between border border-transparent hover:border-gray-100 transition-all">
+                            <div>
+                                <p class="font-bold text-sm text-gray-800">${staff.name}</p>
+                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">${staff.role}</p>
+                                <p class="text-[11px] text-gray-500 mt-1">${staff.email || 'No email'} • ${staff.phone || 'No phone'}</p>
+                            </div>
+                            <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">Approver</span>
+                        </div>
+                    `).join('') : '<p class="text-center text-gray-400 py-6 border border-dashed rounded-2xl">No admin staff added yet.</p>'}
+                </div>
+
                 <h4 class="font-bold text-gray-800 mb-4 px-2">Directories</h4>
                 <div class="grid grid-cols-2 gap-4">
                     <button onclick="window.openAddResident()" class="white-card p-6 flex flex-col items-center gap-3 hover:border-indigo-100 border border-transparent active:scale-95 transition-all">
@@ -3481,6 +3784,7 @@
                 const userName = state.userType === 'admin' ? (adminSession?.staff?.name || 'Estate Staff') : residentData.name;
                 const userEmail = state.userType === 'admin' ? (adminSession?.staff?.email || adminSession?.account?.email || '') : residentData.email;
                 const userPhone = state.userType === 'admin' ? (adminSession?.staff?.phone || adminSession?.account?.phone || '') : residentData.phone;
+                const userRole = state.userType === 'admin' ? getCurrentAdminDisplayRole() : 'Resident';
                 const estateName = state.userType === 'admin'
                     ? (adminSession?.account?.estateName || 'Estate Admin')
                     : getCurrentEstateName();
@@ -3515,6 +3819,12 @@
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">${state.userType === 'admin' ? 'Staff Name' : 'Full Name'}</label>
                         <input type="text" value="${userName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
                     </div>
+                    ${state.userType === 'admin' ? `
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Designation</label>
+                        <input type="text" value="${userRole}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                    </div>
+                    ` : ''}
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Email Address</label>
                         <input type="email" value="${userEmail}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
@@ -3946,6 +4256,90 @@
         }
 
         // Wrapped Async Callers for Database mutations
+        window.refreshDisbursementSubcategories = function(selectedCategory) {
+            const categorySelect = document.getElementById('disburse-category');
+            const subCategorySelect = document.getElementById('disburse-subcategory');
+            if (!categorySelect || !subCategorySelect) return;
+
+            const category = toStr(selectedCategory || categorySelect.value);
+            const optionsHtml = getExpenseSubcategoryOptionsHtml(category);
+            subCategorySelect.innerHTML = optionsHtml
+                ? `<option value="">Select Subcategory...</option>${optionsHtml}`
+                : '<option value="">Select category first...</option>';
+            subCategorySelect.disabled = !optionsHtml;
+        };
+
+        window.openAddAdminStaff = function() {
+            if (!isCurrentUserSuperAdmin()) {
+                return window.showToast('Only the super admin can add more staff');
+            }
+
+            const content = `
+                <h2 class="text-2xl font-bold mb-2 text-indigo-600">Add Admin Staff</h2>
+                <p class="text-sm text-gray-500 mb-6">Add another staff member who can log in and approve estate disbursements.</p>
+                <div class="space-y-4">
+                    <input type="text" id="new-staff-name" placeholder="Full Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
+                    <select id="new-staff-role" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <option value="">Select Designation...</option>
+                        ${getStaffRoleOptionsHtml()}
+                    </select>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="tel" id="new-staff-phone" placeholder="Phone" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                        <input type="email" id="new-staff-email" placeholder="Email" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
+                    </div>
+                    <button onclick="window.saveAdminStaff()" class="w-full mt-2 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Add Staff Member</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
+        };
+
+        window.saveAdminStaff = async function() {
+            if (!isCurrentUserSuperAdmin()) {
+                return window.showToast('Only the super admin can add more staff');
+            }
+
+            const name = readTextField('new-staff-name', 'Staff name', {
+                min: 2,
+                max: 80,
+                pattern: /^[a-zA-Z .'-]+$/,
+                patternMessage: 'Staff name contains invalid characters'
+            });
+            if (!name) return;
+            const role = toStr(document.getElementById('new-staff-role')?.value);
+            if (!role) return window.showToast('Select staff designation');
+            const phone = readPhoneField('new-staff-phone', 'Staff phone');
+            if (!phone) return;
+            const email = readEmailField('new-staff-email', 'Staff email');
+            if (!email) return;
+            if (!ensureOnlineMutation('add staff members')) return;
+
+            const currentStaff = getEstateAdminStaffMembers();
+            const exists = currentStaff.some(staff =>
+                toStr(staff.email).toLowerCase() === email.toLowerCase() || normalizePhone(staff.phone) === phone
+            );
+            if (exists) return window.showToast('That staff email or phone already exists');
+            const estateAccount = getCurrentAdminSession()?.account;
+            if (
+                toStr(estateAccount?.email).toLowerCase() === email.toLowerCase()
+                || normalizePhone(estateAccount?.phone) === phone
+            ) {
+                return window.showToast('Use a different email and phone from the super admin account');
+            }
+
+            const updatedStaff = [...currentStaff, normalizeStaffRecord({ name, role, phone, email })];
+            try {
+                const updatedEstate = await updateEstateSignup(getCurrentEstateId(), { adminStaff: updatedStaff });
+                syncCurrentEstateRecord(updatedEstate);
+                updateGlobalState();
+                window.showToast('Admin staff added successfully');
+                window.closeModal();
+            } catch (error) {
+                window.showToast(error.message || 'Could not add staff member');
+            }
+        };
+
         window.openLogDisbursement = function() {
             const content = `
                 <h2 class="text-2xl font-bold mb-6 text-rose-600">Log Disbursement</h2>
@@ -3958,13 +4352,27 @@
                         ${state.vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('')}
                     </select>
                     
-                    <select id="disburse-category" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Security">Security</option>
-                        <option value="Utility">Utility</option>
-                        <option value="Sanitation">Sanitation</option>
-                        <option value="Miscellaneous">Miscellaneous</option>
+                    <select id="disburse-category" onchange="window.refreshDisbursementSubcategories(this.value)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
+                        <option value="">Select Main Category...</option>
+                        ${getExpenseCategoryOptionsHtml()}
                     </select>
+
+                    <select id="disburse-subcategory" disabled class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100 disabled:text-gray-400 disabled:cursor-not-allowed">
+                        <option value="">Select category first...</option>
+                    </select>
+
+                    <div class="bg-amber-50 border border-amber-100 rounded-[1.5rem] p-4 space-y-3">
+                        <div>
+                            <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest">Approval Required</p>
+                            <p class="text-xs text-amber-700 mt-1">Another admin must approve this disbursement before it can be logged.</p>
+                        </div>
+                        <select id="disburse-approver" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-amber-100">
+                            <option value="">Select Approving Admin...</option>
+                            ${getApprovalActorOptionsHtml()}
+                        </select>
+                        <input type="text" id="disburse-approval-login" placeholder="Approver Email or Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-amber-100" data-trim-input maxlength="120" autocapitalize="off">
+                        <input type="password" id="disburse-approval-password" placeholder="Approver Password" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-amber-100" maxlength="64" autocomplete="current-password">
+                    </div>
 
                     <button onclick="window.saveDisbursement()" class="w-full mt-4 py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-all">Record Expense</button>
                 </div>
@@ -3972,6 +4380,7 @@
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
             applyInputGuards(document.getElementById('modal-content'));
+            window.refreshDisbursementSubcategories();
         };
 
         window.openAddPoll = function() {
@@ -4169,17 +4578,58 @@
         };
 
         window.saveDisbursement = async () => {
+            const adminSession = getCurrentAdminSession();
+            if (!adminSession?.account) return window.showToast('Admin session not found');
             const title = readTextField('disburse-title', 'Expense description', { min: 3, max: 100 });
             if (!title) return;
             const amount = readCurrencyField('disburse-amount', 'Amount');
             if (amount === false) return;
             const vendorId = toStr(document.getElementById('disburse-vendor').value);
             const category = toStr(document.getElementById('disburse-category').value);
+            const subCategory = toStr(document.getElementById('disburse-subcategory')?.value);
+            const selectedApproverId = toStr(document.getElementById('disburse-approver')?.value);
+            const approvalLogin = readLoginIdentifierField('disburse-approval-login');
+            if (!approvalLogin) return;
+            const approvalPassword = readPasswordField('disburse-approval-password', 'Approver password');
+            if (!approvalPassword) return;
             if(!vendorId) return window.showToast("Select a vendor");
             if(!category) return window.showToast("Select a category");
+            if(!subCategory) return window.showToast("Select a subcategory");
+            if(!selectedApproverId) return window.showToast("Select an approving admin");
             if (!ensureOnlineMutation('log disbursements')) return;
 
-            const expensePayload = withCurrentEstate({ id: generateId(), title, category, amount, date: new Date().toISOString(), icon: 'banknote', color: 'bg-rose-500', vendorId, approver: document.getElementById('user-name').innerText });
+            const approver = getEstateApprovalActors().find(actor => actor.id === selectedApproverId);
+            if (!approver) return window.showToast('Approving admin not found');
+            if (approver.id === getCurrentAdminActorKey()) {
+                return window.showToast('A different admin must approve this disbursement');
+            }
+
+            const normalizedApprovalLogin = toStr(approvalLogin).toLowerCase();
+            const normalizedApprovalPhone = normalizePhone(approvalLogin);
+            const approverMatches =
+                (approver.email && approver.email === normalizedApprovalLogin)
+                || (approver.phone && approver.phone === normalizedApprovalPhone);
+            if (!approverMatches) {
+                return window.showToast('Approver identity does not match the selected admin');
+            }
+
+            const approvalHash = await hashPassword(approvalPassword);
+            if (approvalHash !== adminSession.account.passwordHash) {
+                return window.showToast('Invalid approver password');
+            }
+
+            const expensePayload = withCurrentEstate({
+                id: generateId(),
+                title,
+                category,
+                subCategory,
+                amount,
+                date: new Date().toISOString(),
+                icon: 'banknote',
+                color: 'bg-rose-500',
+                vendorId,
+                approver: `${approver.name}${approver.role ? ` (${approver.role})` : ''}`
+            });
             const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
             if (expenseInsert.error) {
                 console.error('Failed to log disbursement:', expenseInsert.error);
