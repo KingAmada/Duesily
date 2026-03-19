@@ -991,6 +991,40 @@
             return subCategory ? `${category} • ${subCategory}` : category;
         }
 
+        function normalizeAccountNumber(value) {
+            return String(value || '').replace(/\D/g, '');
+        }
+
+        function normalizeVendorBankAccounts(accounts = []) {
+            if (!Array.isArray(accounts)) return [];
+            return accounts
+                .map(account => ({
+                    id: toStr(account?.id) || generateId(),
+                    bankName: toStr(account?.bankName),
+                    accountNumber: normalizeAccountNumber(account?.accountNumber),
+                    accountName: toStr(account?.accountName)
+                }))
+                .filter(account => account.bankName && account.accountNumber && account.accountName);
+        }
+
+        function getVendorById(vendorId) {
+            return state.vendors.find(vendor => normalizeId(vendor.id) === normalizeId(vendorId)) || null;
+        }
+
+        function getVendorBankAccounts(vendorId) {
+            return normalizeVendorBankAccounts(getVendorById(vendorId)?.bankAccounts || []);
+        }
+
+        function getVendorBankAccountOptionsHtml(vendorId) {
+            return getVendorBankAccounts(vendorId)
+                .map(account => `
+                    <option value="${account.id}">
+                        ${account.bankName} • ${account.accountNumber} • ${account.accountName}
+                    </option>
+                `)
+                .join('');
+        }
+
         function getApprovalActorOptionsHtml() {
             const currentActorKey = getCurrentAdminActorKey();
             return getEstateApprovalActors()
@@ -3473,6 +3507,10 @@
                         <span class="text-xs font-bold text-gray-400 uppercase">Approved By</span>
                         <span class="text-sm font-bold text-gray-800">${expense.approver}${expense.approverRole ? ` (${expense.approverRole})` : ''}</span>
                     </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Payout Destination</span>
+                        <span class="text-sm font-bold text-gray-800 text-right">${expense.payoutBankName || 'N/A'}${expense.payoutAccountNumber ? ` • ${expense.payoutAccountNumber}` : ''}${expense.payoutAccountName ? ` • ${expense.payoutAccountName}` : ''}</span>
+                    </div>
                 </div>
                 <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
             `;
@@ -3486,6 +3524,7 @@
             if(!vendor) return;
             const vendorExpenses = getVendorExpenseRecords(id);
             const totalPaid = getVendorTotalPaid(id);
+            const vendorAccounts = normalizeVendorBankAccounts(vendor.bankAccounts || []);
 
             const content = `
                 <div class="flex items-center gap-4 mb-6">
@@ -3502,6 +3541,18 @@
                     <p class="flex items-center gap-3 text-gray-600"><i data-lucide="phone" class="w-4 h-4 text-gray-400"></i> ${vendor.contact}</p>
                     <p class="flex items-center gap-3 text-gray-600"><i data-lucide="mail" class="w-4 h-4 text-gray-400"></i> ${vendor.email || 'N/A'}</p>
                     <p class="flex items-center gap-3 text-gray-600"><i data-lucide="map-pin" class="w-4 h-4 text-gray-400"></i> ${vendor.address || 'N/A'}</p>
+                </div>
+
+                <div class="mb-6">
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Vendor Payout Accounts</p>
+                    <div class="space-y-3">
+                        ${vendorAccounts.length ? vendorAccounts.map(account => `
+                            <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                                <p class="font-bold text-sm text-gray-800">${account.bankName}</p>
+                                <p class="text-xs text-gray-500 mt-1">${account.accountNumber} • ${account.accountName}</p>
+                            </div>
+                        `).join('') : '<div class="p-4 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-400">No payout account saved yet.</div>'}
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4 mb-8">
@@ -4655,6 +4706,35 @@
             subCategorySelect.disabled = !optionsHtml;
         };
 
+        window.refreshDisbursementVendorAccounts = function(selectedVendorId) {
+            const vendorSelect = document.getElementById('disburse-vendor');
+            const accountSelect = document.getElementById('disburse-vendor-account');
+            const customFields = document.getElementById('disburse-custom-account-fields');
+            const customBank = document.getElementById('disburse-custom-bank-name');
+            const customNumber = document.getElementById('disburse-custom-account-number');
+            const customName = document.getElementById('disburse-custom-account-name');
+            if (!vendorSelect || !accountSelect || !customFields) return;
+
+            const vendorId = toStr(selectedVendorId || vendorSelect.value);
+            const optionsHtml = getVendorBankAccountOptionsHtml(vendorId);
+            accountSelect.innerHTML = `
+                <option value="">Select Vendor Account...</option>
+                ${optionsHtml}
+                <option value="__new__">Use Another Account for this Payment</option>
+            `;
+            accountSelect.disabled = !vendorId;
+            customFields.classList.add('hidden');
+            if (customBank) customBank.value = '';
+            if (customNumber) customNumber.value = '';
+            if (customName) customName.value = '';
+        };
+
+        window.toggleDisbursementCustomAccount = function(selectedValue) {
+            const customFields = document.getElementById('disburse-custom-account-fields');
+            if (!customFields) return;
+            customFields.classList.toggle('hidden', toStr(selectedValue) !== '__new__');
+        };
+
         window.openAddAdminStaff = function() {
             if (!isCurrentUserSuperAdmin()) {
                 return window.showToast('Only the super admin can add more staff');
@@ -4737,6 +4817,20 @@
                         <option value="">Select Vendor...</option>
                         ${state.vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('')}
                     </select>
+
+                    <select id="disburse-vendor-account" onchange="window.toggleDisbursementCustomAccount(this.value)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" disabled>
+                        <option value="">Select vendor first...</option>
+                    </select>
+
+                    <div id="disburse-custom-account-fields" class="hidden space-y-4 bg-gray-50 rounded-[1.5rem] p-4">
+                        <div>
+                            <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Alternative Payout Account</p>
+                            <p class="text-xs text-gray-500 mt-1">Use this if the vendor wants payment sent to a different account for this disbursement.</p>
+                        </div>
+                        <input type="text" id="disburse-custom-bank-name" placeholder="Bank Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" data-trim-input maxlength="80">
+                        <input type="text" id="disburse-custom-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" inputmode="numeric" maxlength="10">
+                        <input type="text" id="disburse-custom-account-name" placeholder="Account Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" data-trim-input maxlength="100">
+                    </div>
                     
                     <select id="disburse-category" onchange="window.refreshDisbursementSubcategories(this.value)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100">
                         <option value="">Select Main Category...</option>
@@ -4758,6 +4852,10 @@
             document.getElementById('modal-container').classList.remove('hidden');
             applyInputGuards(document.getElementById('modal-content'));
             window.refreshDisbursementSubcategories();
+            const vendorSelect = document.getElementById('disburse-vendor');
+            if (vendorSelect) {
+                vendorSelect.addEventListener('change', event => window.refreshDisbursementVendorAccounts(event.target.value));
+            }
         };
 
         window.openAddPoll = function() {
@@ -4911,6 +5009,16 @@
                     
                     <input type="text" id="ven-sub" placeholder="Sub-Category (e.g. Plumbing, Guards)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="60">
 
+                    <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
+                        <div>
+                            <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Primary Payout Account</p>
+                            <p class="text-xs text-gray-500 mt-1">This is the vendor account Duesily will usually pay into.</p>
+                        </div>
+                        <input type="text" id="ven-bank-name" placeholder="Bank Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="80">
+                        <input type="text" id="ven-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" inputmode="numeric" maxlength="10">
+                        <input type="text" id="ven-account-name" placeholder="Account Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
+                    </div>
+
                     <button onclick="window.saveVendor()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Vendor</button>
                 </div>
             `;
@@ -4964,12 +5072,33 @@
             const amount = readCurrencyField('disburse-amount', 'Amount');
             if (amount === false) return;
             const vendorId = toStr(document.getElementById('disburse-vendor').value);
+            const vendorAccountSelection = toStr(document.getElementById('disburse-vendor-account')?.value);
             const category = toStr(document.getElementById('disburse-category').value);
             const subCategory = toStr(document.getElementById('disburse-subcategory')?.value);
             if(!vendorId) return window.showToast("Select a vendor");
+            if(!vendorAccountSelection) return window.showToast("Select the vendor payout account");
             if(!category) return window.showToast("Select a category");
             if(!subCategory) return window.showToast("Select a subcategory");
             if (!ensureOnlineMutation('log disbursements')) return;
+
+            let payoutBankName = '';
+            let payoutAccountNumber = '';
+            let payoutAccountName = '';
+
+            if (vendorAccountSelection === '__new__') {
+                payoutBankName = readTextField('disburse-custom-bank-name', 'Bank name', { min: 2, max: 80 }) || '';
+                if (!payoutBankName) return;
+                payoutAccountNumber = normalizeAccountNumber(document.getElementById('disburse-custom-account-number')?.value);
+                if (!/^\d{10}$/.test(payoutAccountNumber)) return window.showToast('Enter a valid 10-digit account number');
+                payoutAccountName = readTextField('disburse-custom-account-name', 'Account name', { min: 2, max: 100 }) || '';
+                if (!payoutAccountName) return;
+            } else {
+                const selectedAccount = getVendorBankAccounts(vendorId).find(account => normalizeId(account.id) === normalizeId(vendorAccountSelection));
+                if (!selectedAccount) return window.showToast('Selected vendor account not found');
+                payoutBankName = selectedAccount.bankName;
+                payoutAccountNumber = selectedAccount.accountNumber;
+                payoutAccountName = selectedAccount.accountName;
+            }
 
             const approvalRequestPayload = withCurrentEstate({
                 id: generateId(),
@@ -4983,6 +5112,9 @@
                 icon: 'banknote',
                 color: 'bg-rose-500',
                 vendorId,
+                payoutBankName,
+                payoutAccountNumber,
+                payoutAccountName,
                 status: 'pending',
                 requestedBy: requester.name,
                 requestedByRole: requester.role,
@@ -5027,7 +5159,10 @@
                 icon: request.icon || 'banknote',
                 color: request.color || 'bg-rose-500',
                 vendorId: request.vendorId,
-                approver: `${approver.name}${approver.role ? ` (${approver.role})` : ''}`
+                approver: `${approver.name}${approver.role ? ` (${approver.role})` : ''}`,
+                payoutBankName: request.payoutBankName,
+                payoutAccountNumber: request.payoutAccountNumber,
+                payoutAccountName: request.payoutAccountName
             });
 
             const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
@@ -5077,6 +5212,7 @@
                         <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Request</p>
                         <p class="font-bold text-sm text-gray-800">${request.title}</p>
                         <p class="text-xs text-gray-500 mt-1">${getExpenseCategoryDisplay(request)} • ${formatCurrency(request.amount)}</p>
+                        <p class="text-xs text-gray-500 mt-1">${request.payoutBankName || 'Bank not set'} • ${request.payoutAccountNumber || 'Account not set'} • ${request.payoutAccountName || 'Account name not set'}</p>
                     </div>
                     <textarea id="reject-disbursement-reason" placeholder="Why is this being rejected?" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100 h-28 resize-none" data-trim-input maxlength="200"></textarea>
                     <button onclick="window.rejectDisbursementRequest('${request.id}')" class="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-transform">Reject Request</button>
@@ -5260,11 +5396,21 @@
             const service = toStr(document.getElementById('ven-service').value);
             const subCategory = readOptionalTextField('ven-sub', 'Sub-category', { max: 60 });
             if (subCategory === false) return;
+            const bankName = readTextField('ven-bank-name', 'Vendor bank name', { min: 2, max: 80 });
+            if (!bankName) return;
+            const accountNumber = normalizeAccountNumber(document.getElementById('ven-account-number')?.value);
+            if (!/^\d{10}$/.test(accountNumber)) return window.showToast('Enter a valid 10-digit vendor account number');
+            const accountName = readTextField('ven-account-name', 'Vendor account name', { min: 2, max: 100 });
+            if (!accountName) return;
 
             if(!service) return window.showToast('Select a vendor service');
             if (!ensureOnlineMutation('add vendors')) return;
 
-            const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [] })]).select().single();
+            const bankAccounts = normalizeVendorBankAccounts([
+                { id: generateId(), bankName, accountNumber, accountName }
+            ]);
+
+            const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [], bankAccounts })]).select().single();
             if (error) {
                 console.error('Failed to create vendor:', error);
                 return window.showToast('Could not add vendor');
