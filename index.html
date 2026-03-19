@@ -864,6 +864,88 @@
             ]
         };
 
+        const VENDOR_CATEGORY_MAP = {
+            'Operations': [
+                'Security',
+                'Cleaning / Sanitation',
+                'Waste Disposal',
+                'Gardening / Landscaping',
+                'Estate Administration',
+                'Office Supplies',
+                'Staff Salaries / Wages',
+                'Staff Welfare / Uniforms',
+                'Pest Control',
+                'Tree Trimming',
+                'Software / Tech Subscriptions',
+                'Fuel Logistics / Transport',
+                'Vehicle Maintenance',
+                'Consumables',
+                'Staff Training'
+            ],
+            'Utilities': [
+                'Electricity',
+                'Diesel / Fuel',
+                'Generator Maintenance',
+                'Water Supply',
+                'Internet / Telecoms',
+                'Streetlight Power'
+            ],
+            'Repairs & Maintenance': [
+                'Road Repairs',
+                'Drainage Maintenance',
+                'Plumbing Repairs',
+                'Electrical Repairs',
+                'Generator Repairs',
+                'Borehole / Water System Repairs',
+                'Gate / Fence Repairs',
+                'Building / Common Area Maintenance',
+                'CCTV / Access Control Maintenance',
+                'Visitor Management System'
+            ],
+            'Safety & Compliance': [
+                'Fire Safety Equipment',
+                'Safety Inspections',
+                'Insurance',
+                'Legal / Compliance Fees',
+                'Permits / Statutory Fees',
+                'Emergency Response Expenses'
+            ],
+            'Community & Governance': [
+                'Meetings / AGM Expenses',
+                'Resident Communication / Notices',
+                'Voting / Polling Costs',
+                'Events / Community Engagement',
+                'Dispute Resolution / Mediation'
+            ],
+            'Projects / Capital Expenditure': [
+                'New Infrastructure Projects',
+                'Road Construction',
+                'Streetlight Installation',
+                'Security Upgrades',
+                'Water Expansion Projects',
+                'Landscaping Upgrades',
+                'Recreational Facilities',
+                'Estate Beautification',
+                'Drainage Expansion'
+            ],
+            'Financial': [
+                'Bank Charges',
+                'Payment Gateway Fees',
+                'Refunds / Reversals',
+                'Audit / Accounting Fees',
+                'Debt Recovery Costs',
+                'Contingency / Emergency Reserve',
+                'Bad Debt / Unpaid Dues Write-off'
+            ],
+            'Vendors & Outsourced Services': [
+                'Security Contractor',
+                'Cleaning Contractor',
+                'Waste Contractor',
+                'Facility Management Contractor',
+                'Technical Consultants'
+            ]
+        };
+
         const BANK_NAME_OPTIONS = [
             '9 payment service Bank',
             'AB MICROFINANCE BANK',
@@ -1529,6 +1611,19 @@
                 .join('');
         }
 
+        function getVendorCategoryOptionsHtml() {
+            return Object.keys(VENDOR_CATEGORY_MAP)
+                .map(category => `<option value="${category}">${category}</option>`)
+                .join('');
+        }
+
+        function getVendorSubcategoryOptionsHtml(category) {
+            const subcategories = VENDOR_CATEGORY_MAP[toStr(category)] || [];
+            return subcategories
+                .map(subCategory => `<option value="${subCategory}">${subCategory}</option>`)
+                .join('');
+        }
+
         function getExpenseCategoryDisplay(expense) {
             const category = toStr(expense?.category) || 'Expense';
             const subCategory = toStr(expense?.subCategory);
@@ -1537,6 +1632,13 @@
 
         function normalizeAccountNumber(value) {
             return String(value || '').replace(/\D/g, '');
+        }
+
+        function isValidLatLngPair(coords) {
+            return Array.isArray(coords)
+                && coords.length === 2
+                && Number.isFinite(Number(coords[0]))
+                && Number.isFinite(Number(coords[1]));
         }
 
         function normalizeVendorBankAccounts(accounts = []) {
@@ -1567,6 +1669,32 @@
                     </option>
                 `)
                 .join('');
+        }
+
+        async function insertDisbursementApprovalRecord(approvalRequestPayload) {
+            const payloadVariants = [
+                approvalRequestPayload,
+                (({ payoutBankName, payoutAccountNumber, payoutAccountName, ...rest }) => rest)(approvalRequestPayload),
+                (({ payoutBankName, payoutAccountNumber, payoutAccountName, requestedByActorId, requestedByRole, ...rest }) => rest)(approvalRequestPayload)
+            ];
+
+            let lastError = null;
+            for (const payload of payloadVariants) {
+                const response = await supabase
+                    .from('duesily_disbursement_approvals')
+                    .insert([payload])
+                    .select()
+                    .single();
+                if (!response.error) {
+                    if (payload !== approvalRequestPayload) {
+                        console.warn('Disbursement approval insert used compatibility fallback. Run the latest SQL migration to restore all approval fields.');
+                    }
+                    return response;
+                }
+                lastError = response.error;
+            }
+
+            return { data: null, error: lastError };
         }
 
         function getApprovalActorOptionsHtml() {
@@ -2602,6 +2730,18 @@
                 if (input.dataset.trimBound === 'true') return;
                 input.dataset.trimBound = 'true';
                 input.addEventListener('blur', () => normalizeTextInput(input));
+            });
+
+            root.querySelectorAll('[data-digit-input]').forEach(input => {
+                if (input.dataset.digitBound === 'true') return;
+                input.dataset.digitBound = 'true';
+                input.setAttribute('inputmode', 'numeric');
+                input.addEventListener('input', () => {
+                    input.value = String(input.value || '').replace(/\D/g, '');
+                });
+                input.addEventListener('blur', () => {
+                    input.value = String(input.value || '').replace(/\D/g, '');
+                });
             });
         }
 
@@ -5069,14 +5209,35 @@
             const homeView = { center: [9.0820, 8.6753], zoom: 5.2 };
             let tourIndex = 0;
 
+            const safelyMoveMap = (coords, zoom, options = {}) => {
+                if (!isValidLatLngPair(coords) || !Number.isFinite(Number(zoom))) return;
+                try {
+                    map.invalidateSize(false);
+                    const width = Number(mapEl?.clientWidth || 0);
+                    const height = Number(mapEl?.clientHeight || 0);
+                    if (width < 40 || height < 40) {
+                        map.setView(coords, zoom, { animate: false });
+                        return;
+                    }
+                    map.flyTo(coords, zoom, options);
+                } catch (error) {
+                    console.error('Map movement fallback triggered:', error);
+                    try {
+                        map.setView(coords, zoom, { animate: false });
+                    } catch (_) {
+                        // ignore hard map failures
+                    }
+                }
+            };
+
             const runMapTour = () => {
                 const region = regions[tourIndex % regions.length];
                 drawEstateDots(region);
-                map.flyTo(region.coords, region.zoom, { duration: 2.6, easeLinearity: 0.22 });
+                safelyMoveMap(region.coords, region.zoom, { duration: 2.6, easeLinearity: 0.22 });
 
                 window.mapTourTimer = setTimeout(() => {
                     drawEstateDots();
-                    map.flyTo(homeView.center, homeView.zoom, { duration: 2.2, easeLinearity: 0.25 });
+                    safelyMoveMap(homeView.center, homeView.zoom, { duration: 2.2, easeLinearity: 0.25 });
                     tourIndex += 1;
                     window.mapTourTimer = setTimeout(runMapTour, 2600);
                 }, 3600);
@@ -5250,6 +5411,19 @@
             subCategorySelect.disabled = !optionsHtml;
         };
 
+        window.refreshVendorSubcategories = function(selectedCategory) {
+            const categorySelect = document.getElementById('ven-service');
+            const subCategorySelect = document.getElementById('ven-sub');
+            if (!categorySelect || !subCategorySelect) return;
+
+            const category = toStr(selectedCategory || categorySelect.value);
+            const optionsHtml = getVendorSubcategoryOptionsHtml(category);
+            subCategorySelect.innerHTML = optionsHtml
+                ? `<option value="">Select Subcategory...</option>${optionsHtml}`
+                : '<option value="">Select category first...</option>';
+            subCategorySelect.disabled = !optionsHtml;
+        };
+
         window.refreshDisbursementVendorAccounts = function(selectedVendorId) {
             const vendorSelect = document.getElementById('disburse-vendor');
             const accountSelect = document.getElementById('disburse-vendor-account');
@@ -5375,7 +5549,7 @@
                             <option value="">Select Bank...</option>
                             ${getBankOptionsHtml()}
                         </select>
-                        <input type="text" id="disburse-custom-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" inputmode="numeric" maxlength="10">
+                        <input type="text" id="disburse-custom-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" inputmode="numeric" maxlength="10" data-digit-input>
                         <input type="text" id="disburse-custom-account-name" placeholder="Account Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100" data-trim-input maxlength="100">
                     </div>
                     
@@ -5547,14 +5721,14 @@
                     <input type="email" id="ven-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
                     <input type="text" id="ven-address" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="140">
                     
-                    <select id="ven-service" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
-                        <option value="Security">Security Services</option>
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Utility">Utilities</option>
-                        <option value="Sanitation">Sanitation</option>
+                    <select id="ven-service" onchange="window.refreshVendorSubcategories(this.value)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
+                        <option value="">Select Main Category...</option>
+                        ${getVendorCategoryOptionsHtml()}
                     </select>
                     
-                    <input type="text" id="ven-sub" placeholder="Sub-Category (e.g. Plumbing, Guards)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="60">
+                    <select id="ven-sub" disabled class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 disabled:text-gray-400 disabled:cursor-not-allowed">
+                        <option value="">Select category first...</option>
+                    </select>
 
                     <div class="bg-gray-50 rounded-[1.5rem] p-4 space-y-4">
                         <div>
@@ -5565,7 +5739,7 @@
                             <option value="">Select Bank...</option>
                             ${getBankOptionsHtml()}
                         </select>
-                        <input type="text" id="ven-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" inputmode="numeric" maxlength="10">
+                        <input type="text" id="ven-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" inputmode="numeric" maxlength="10" data-digit-input>
                         <input type="text" id="ven-account-name" placeholder="Account Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
                     </div>
 
@@ -5574,6 +5748,7 @@
             `;
             document.getElementById('modal-container').classList.remove('hidden');
             applyInputGuards(document.getElementById('modal-content'));
+            window.refreshVendorSubcategories();
         };
 
         window.confirmPayment = async () => {
@@ -5615,6 +5790,8 @@
         window.saveDisbursement = async () => {
             const adminSession = getCurrentAdminSession();
             if (!adminSession?.account) return window.showToast('Admin session not found');
+            const estateId = getCurrentEstateId();
+            if (!estateId) return window.showToast('Estate context is missing. Refresh the app and log in again.');
             const requester = getCurrentApprovalActor();
             if (!requester) return window.showToast('Admin approval identity not found');
             const title = readTextField('disburse-title', 'Expense description', { min: 3, max: 100 });
@@ -5676,10 +5853,15 @@
                 rejectionReason: '',
                 expenseId: ''
             });
-            const approvalInsert = await supabase.from('duesily_disbursement_approvals').insert([approvalRequestPayload]).select().single();
+            const approvalInsert = await insertDisbursementApprovalRecord(approvalRequestPayload);
             if (approvalInsert.error) {
                 console.error('Failed to queue disbursement approval:', approvalInsert.error);
-                return window.showToast('Could not submit disbursement for approval');
+                const errorMessage = [
+                    approvalInsert.error.message,
+                    approvalInsert.error.details,
+                    approvalInsert.error.hint
+                ].filter(Boolean).join(' ');
+                return window.showToast(errorMessage || 'Could not submit disbursement for approval');
             }
             
             upsertLocalRecord('disbursementApprovals', approvalInsert.data);
@@ -5935,6 +6117,8 @@
         };
 
         window.saveVendor = async () => {
+            const estateId = getCurrentEstateId();
+            if (!estateId) return window.showToast('Estate context is missing. Refresh the app and log in again.');
             const name = readTextField('ven-name', 'Vendor name', { min: 2, max: 100 });
             if (!name) return;
             const contact = readPhoneField('ven-phone', 'Vendor phone');
@@ -5944,8 +6128,7 @@
             const address = readOptionalTextField('ven-address', 'Vendor address', { max: 140 });
             if (address === false) return;
             const service = toStr(document.getElementById('ven-service').value);
-            const subCategory = readOptionalTextField('ven-sub', 'Sub-category', { max: 60 });
-            if (subCategory === false) return;
+            const subCategory = toStr(document.getElementById('ven-sub')?.value);
             const bankName = toStr(document.getElementById('ven-bank-name')?.value);
             if (!bankName) return window.showToast('Select vendor bank');
             const accountNumber = normalizeAccountNumber(document.getElementById('ven-account-number')?.value);
@@ -5954,13 +6137,14 @@
             if (!accountName) return;
 
             if(!service) return window.showToast('Select a vendor service');
+            if(!subCategory) return window.showToast('Select a vendor subcategory');
             if (!ensureOnlineMutation('add vendors')) return;
 
             const bankAccounts = normalizeVendorBankAccounts([
                 { id: generateId(), bankName, accountNumber, accountName }
             ]);
 
-            const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service: service.toUpperCase(), subCategory, rating: 5.0, contact, email, address, transactions: [], bankAccounts })]).select().single();
+            const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service, subCategory, rating: 5.0, contact, email, address, transactions: [], bankAccounts })]).select().single();
             if (error) {
                 console.error('Failed to create vendor:', error);
                 return window.showToast('Could not add vendor');
