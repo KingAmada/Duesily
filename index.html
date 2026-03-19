@@ -343,11 +343,11 @@
 
             <div class="mt-16 sm:mt-24 pt-8 sm:pt-10 border-t border-slate-100 flex flex-wrap justify-center gap-4 sm:gap-6 md:gap-8 text-center px-4">
                 <div class="min-w-[130px] sm:min-w-[150px] rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 sm:py-4">
-                    <div class="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-slate-900">450+</div>
+                    <div class="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-slate-900">33</div>
                     <div class="text-[10px] sm:text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Estates onboarded</div>
                 </div>
                 <div class="min-w-[130px] sm:min-w-[150px] rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 sm:py-4">
-                    <div class="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-slate-900">12k+</div>
+                    <div class="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-slate-900">8k+</div>
                     <div class="text-[10px] sm:text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Residents reached</div>
                 </div>
                 <div class="min-w-[130px] sm:min-w-[150px] rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 sm:py-4">
@@ -367,7 +367,7 @@
                     <div class="relative min-h-[320px] sm:min-h-[420px] bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-[0_18px_60px_rgba(15,23,42,0.06)] p-2 sm:p-3">
                         <div class="absolute top-5 left-5 z-20 pointer-events-none">
                             <p class="text-[9px] sm:text-[10px] font-black uppercase text-slate-400 tracking-widest bg-white/90 px-3 py-2 rounded-2xl backdrop-blur-sm inline-block mb-2 shadow-sm border border-slate-100">Active Regions</p><br>
-                            <p class="text-sm sm:text-base font-bold text-slate-800 bg-white/95 px-4 py-3 rounded-2xl backdrop-blur-sm inline-block shadow-sm border border-slate-100"><span class="text-indigo-600 font-black">450+</span> Estates Nationwide</p>
+                            <p class="text-sm sm:text-base font-bold text-slate-800 bg-white/95 px-4 py-3 rounded-2xl backdrop-blur-sm inline-block shadow-sm border border-slate-100"><span class="text-indigo-600 font-black">33</span> Estates Nationwide</p>
                         </div>
                         <div id="nigeria-map" class="w-full h-full min-h-[304px] sm:min-h-[396px] rounded-[1.5rem] sm:rounded-[2rem] z-10 relative bg-[#f4f7f6]"></div>
                         <div class="absolute inset-0 z-20 pointer-events-none bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.45),transparent_30%)]"></div>
@@ -689,10 +689,13 @@
         const SUPABASE_URL = window.DUESILY_CONFIG?.supabaseUrl || '';
         const SUPABASE_ANON_KEY = window.DUESILY_CONFIG?.supabaseAnonKey || '';
         const WIX_BACKEND_BASE_URL = window.DUESILY_CONFIG?.wixBackendBaseUrl || '';
+        const AUTH_SESSION_STORAGE_KEY = 'duesily_auth_session_v1';
+        const AUTH_SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
         let supabase = null;
         let deferredInstallPrompt = null;
         let realtimeChannel = null;
+        let sessionActivityTimeout = null;
         const chartStore = {};
         const ESTATE_SIGNUPS_TABLE = 'duesily_estate_signups';
         const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns', 'duesily_disbursement_approvals'];
@@ -1494,6 +1497,157 @@
             return sanitizedRecord;
         }
 
+        function getPersistableResidentAccount() {
+            const currentResident = getCurrentResident();
+            if (currentResident) return sanitizeForState(currentResident);
+            const fallbackMembership = getCurrentResidentMemberships().find(entry => normalizeId(entry.id) === normalizeId(state.currentResidentId));
+            return fallbackMembership ? sanitizeForState(fallbackMembership) : null;
+        }
+
+        function buildPersistedSessionPayload() {
+            if (state.userType === 'admin' && state.currentAdminSession?.account) {
+                return sanitizeForState({
+                    version: 1,
+                    type: 'admin',
+                    adminSession: state.currentAdminSession,
+                    currentEstateId: getCurrentEstateId(),
+                    lastActiveAt: Date.now()
+                });
+            }
+
+            if (state.userType === 'resident' && state.currentResidentId) {
+                return sanitizeForState({
+                    version: 1,
+                    type: 'resident',
+                    residentAccount: getPersistableResidentAccount(),
+                    residentMemberships: getCurrentResidentMemberships(),
+                    currentResidentId: state.currentResidentId,
+                    currentEstateId: getCurrentEstateId(),
+                    lastActiveAt: Date.now()
+                });
+            }
+
+            return null;
+        }
+
+        function persistCurrentSession() {
+            try {
+                const payload = buildPersistedSessionPayload();
+                if (!payload) {
+                    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+                    return;
+                }
+                localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(payload));
+            } catch (error) {
+                console.error('Failed to persist session:', error);
+            }
+        }
+
+        function clearPersistedSession() {
+            try {
+                localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+            } catch (error) {
+                console.error('Failed to clear persisted session:', error);
+            }
+        }
+
+        function readPersistedSession() {
+            try {
+                const raw = localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+                if (!raw) return null;
+                return JSON.parse(raw);
+            } catch (error) {
+                console.error('Failed to read persisted session:', error);
+                return null;
+            }
+        }
+
+        function isPersistedSessionExpired(session) {
+            const lastActiveAt = Number(session?.lastActiveAt || 0);
+            if (!Number.isFinite(lastActiveAt) || lastActiveAt <= 0) return true;
+            return (Date.now() - lastActiveAt) > AUTH_SESSION_TIMEOUT_MS;
+        }
+
+        function scheduleSessionExpiryCheck() {
+            if (sessionActivityTimeout) clearTimeout(sessionActivityTimeout);
+            const session = readPersistedSession();
+            if (!session || isPersistedSessionExpired(session)) return;
+            const remainingMs = Math.max(1000, AUTH_SESSION_TIMEOUT_MS - (Date.now() - Number(session.lastActiveAt)));
+            sessionActivityTimeout = window.setTimeout(() => {
+                const latestSession = readPersistedSession();
+                if (latestSession && isPersistedSessionExpired(latestSession)) {
+                    clearPersistedSession();
+                    if (!document.getElementById('app-container')?.classList.contains('hidden')) {
+                        window.logout({ silent: true, reason: 'expired' });
+                    }
+                } else {
+                    scheduleSessionExpiryCheck();
+                }
+            }, remainingMs);
+        }
+
+        function bumpSessionActivity() {
+            const session = readPersistedSession();
+            if (!session) return;
+            session.lastActiveAt = Date.now();
+            try {
+                localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
+            } catch (error) {
+                console.error('Failed to update session activity:', error);
+            }
+            scheduleSessionExpiryCheck();
+        }
+
+        function setupSessionActivityTracking() {
+            const activityEvents = ['click', 'keydown', 'pointerdown', 'touchstart', 'mousemove', 'scroll'];
+            let lastBumpAt = 0;
+            const throttledBump = () => {
+                const now = Date.now();
+                if ((now - lastBumpAt) < 15000) return;
+                lastBumpAt = now;
+                bumpSessionActivity();
+            };
+
+            activityEvents.forEach(eventName => {
+                window.addEventListener(eventName, throttledBump, { passive: true });
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    throttledBump();
+                }
+            });
+        }
+
+        async function restorePersistedSession() {
+            const session = readPersistedSession();
+            if (!session) return false;
+            if (isPersistedSessionExpired(session)) {
+                clearPersistedSession();
+                return false;
+            }
+
+            try {
+                if (session.type === 'admin' && session.adminSession?.account) {
+                    await window.login('admin', sanitizeForState(session.adminSession));
+                    bumpSessionActivity();
+                    return true;
+                }
+
+                if (session.type === 'resident' && session.residentAccount) {
+                    state.currentResidentMemberships = sanitizeCollection(session.residentMemberships || []);
+                    await window.login('resident', null, sanitizeForState(session.residentAccount));
+                    bumpSessionActivity();
+                    return true;
+                }
+            } catch (error) {
+                console.error('Failed to restore persisted session:', error);
+            }
+
+            clearPersistedSession();
+            return false;
+        }
+
         function getCurrentEstateId() {
             return normalizeId(state.currentEstateId);
         }
@@ -2113,8 +2267,13 @@
             setTimeout(() => window.login(type, null, residentAccounts[0]), 800);
         };
 
-        window.logout = function() {
-            window.showToast("Logging out securely...");
+        window.logout = function({ silent = false, reason = 'manual' } = {}) {
+            if (!silent) window.showToast("Logging out securely...");
+            clearPersistedSession();
+            if (sessionActivityTimeout) {
+                clearTimeout(sessionActivityTimeout);
+                sessionActivityTimeout = null;
+            }
             setTimeout(() => {
                 document.getElementById('app-container').classList.add('hidden');
                 document.getElementById('login-view').classList.remove('hidden');
@@ -2131,7 +2290,10 @@
                 window.hideAuthModal();
                 window.scrollTo(0,0);
                 if(window.nigeriaMap) window.nigeriaMap.invalidateSize();
-            }, 800);
+                if (reason === 'expired') {
+                    window.showToast('Please sign in again');
+                }
+            }, silent ? 0 : 800);
         };
 
         window.login = async function(type, adminSession = null, residentAccount = null) {
@@ -2172,6 +2334,8 @@
             document.getElementById('app-container').classList.remove('hidden');
             window.renderNav();
             window.switchTab('dashboard');
+            persistCurrentSession();
+            scheduleSessionExpiryCheck();
 
             if (type === 'resident' && residentAccount?.requiresPasswordChange) {
                 setTimeout(() => window.openResidentPasswordChangeModal(), 250);
@@ -2194,6 +2358,8 @@
             document.getElementById('welcome-text').innerText = getCurrentEstateName();
             document.getElementById('user-name').innerText = residentAccount.name || 'Resident User';
             document.getElementById('user-avatar').src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${(residentAccount.name || 'Resident').replace(' ', '')}`;
+            persistCurrentSession();
+            scheduleSessionExpiryCheck();
             window.showToast(`Switched to ${residentAccount.estateName || 'selected estate'}`);
             window.switchTab('profile');
         };
@@ -2230,6 +2396,8 @@
 
             upsertLocalRecord('residents', data);
             state.forcePasswordChange = false;
+            persistCurrentSession();
+            scheduleSessionExpiryCheck();
             window.closeModal();
             window.showToast('Password updated successfully');
         };
@@ -4160,6 +4328,14 @@
         function initMap() {
             const mapEl = document.getElementById('nigeria-map');
             if (!mapEl || mapEl.classList.contains('hidden')) return;
+            if (window.mapTourTimer) {
+                clearTimeout(window.mapTourTimer);
+                window.mapTourTimer = null;
+            }
+            if (window.nigeriaMap) {
+                window.nigeriaMap.remove();
+                window.nigeriaMap = null;
+            }
             const map = L.map('nigeria-map', {
                 center: [9.0820, 8.6753], 
                 zoom: 5.2,
@@ -4179,13 +4355,67 @@
                 maxZoom: 20
             }).addTo(map);
 
-            const markers = [
-                { coords: [6.5244, 3.3792], label: 'Lagos', dot: 'bg-indigo-600', pulse: 'bg-indigo-500', text: 'text-indigo-900', delay: '0s' },
-                { coords: [9.0579, 7.4951], label: 'Abuja', dot: 'bg-emerald-600', pulse: 'bg-emerald-500', text: 'text-emerald-900', delay: '0.5s' },
-                { coords: [4.8156, 7.0498], label: 'Rivers', dot: 'bg-rose-600', pulse: 'bg-rose-500', text: 'text-rose-900', delay: '1s' }
+            const regions = [
+                {
+                    coords: [9.0579, 7.4951],
+                    label: 'Abuja',
+                    dot: 'bg-emerald-600',
+                    pulse: 'bg-emerald-500',
+                    text: 'text-emerald-900',
+                    delay: '0.5s',
+                    zoom: 8.5,
+                    estateDots: [
+                        [9.102, 7.381], [9.031, 7.462], [8.995, 7.558], [9.081, 7.615],
+                        [8.944, 7.409], [9.126, 7.529], [8.986, 7.331], [9.012, 7.688]
+                    ]
+                },
+                {
+                    coords: [6.5244, 3.3792],
+                    label: 'Lagos',
+                    dot: 'bg-indigo-600',
+                    pulse: 'bg-indigo-500',
+                    text: 'text-indigo-900',
+                    delay: '0s',
+                    zoom: 8.8,
+                    estateDots: [
+                        [6.601, 3.255], [6.548, 3.321], [6.497, 3.412], [6.455, 3.368],
+                        [6.575, 3.447], [6.632, 3.503], [6.510, 3.286], [6.438, 3.454],
+                        [6.566, 3.581], [6.474, 3.247]
+                    ]
+                },
+                {
+                    coords: [4.8156, 7.0498],
+                    label: 'Rivers',
+                    dot: 'bg-rose-600',
+                    pulse: 'bg-rose-500',
+                    text: 'text-rose-900',
+                    delay: '1s',
+                    zoom: 8.4,
+                    estateDots: [
+                        [4.861, 6.972], [4.802, 7.016], [4.775, 7.112], [4.838, 7.164],
+                        [4.744, 7.038], [4.905, 7.087], [4.789, 6.931], [4.848, 7.243]
+                    ]
+                }
             ];
 
-            markers.forEach(m => {
+            const baseEstateDots = [
+                { coords: [12.002, 8.592], color: '#6366f1' },
+                { coords: [11.846, 13.152], color: '#f59e0b' },
+                { coords: [9.076, 7.398], color: '#10b981' },
+                { coords: [8.492, 4.552], color: '#3b82f6' },
+                { coords: [7.378, 3.947], color: '#6366f1' },
+                { coords: [6.524, 3.379], color: '#6366f1' },
+                { coords: [6.151, 6.785], color: '#10b981' },
+                { coords: [5.556, 5.784], color: '#f43f5e' },
+                { coords: [4.816, 7.05], color: '#f43f5e' },
+                { coords: [5.033, 7.923], color: '#f59e0b' },
+                { coords: [7.731, 8.537], color: '#3b82f6' },
+                { coords: [10.316, 9.844], color: '#10b981' }
+            ];
+
+            const estateDotLayer = L.layerGroup().addTo(map);
+
+            regions.forEach(m => {
                 const icon = L.divIcon({
                     className: 'custom-pulse-marker',
                     html: `
@@ -4201,6 +4431,54 @@
                 });
                 L.marker(m.coords, {icon: icon}).addTo(map);
             });
+
+            const drawEstateDots = (focusedRegion = null) => {
+                estateDotLayer.clearLayers();
+
+                baseEstateDots.forEach((dot, index) => {
+                    L.circleMarker(dot.coords, {
+                        radius: 4 + (index % 2),
+                        color: '#ffffff',
+                        weight: 1.5,
+                        fillColor: dot.color,
+                        fillOpacity: 0.9,
+                        opacity: 1
+                    }).addTo(estateDotLayer);
+                });
+
+                if (focusedRegion) {
+                    focusedRegion.estateDots.forEach((coords, index) => {
+                        L.circleMarker(coords, {
+                            radius: 4.5 + (index % 3),
+                            color: '#ffffff',
+                            weight: 1.5,
+                            fillColor: focusedRegion.dot.replace('bg-', '').includes('indigo') ? '#4f46e5' : focusedRegion.dot.replace('bg-', '').includes('emerald') ? '#059669' : '#e11d48',
+                            fillOpacity: 0.95,
+                            opacity: 1
+                        }).addTo(estateDotLayer);
+                    });
+                }
+            };
+
+            drawEstateDots();
+
+            const homeView = { center: [9.0820, 8.6753], zoom: 5.2 };
+            let tourIndex = 0;
+
+            const runMapTour = () => {
+                const region = regions[tourIndex % regions.length];
+                drawEstateDots(region);
+                map.flyTo(region.coords, region.zoom, { duration: 2.6, easeLinearity: 0.22 });
+
+                window.mapTourTimer = setTimeout(() => {
+                    drawEstateDots();
+                    map.flyTo(homeView.center, homeView.zoom, { duration: 2.2, easeLinearity: 0.25 });
+                    tourIndex += 1;
+                    window.mapTourTimer = setTimeout(runMapTour, 2600);
+                }, 3600);
+            };
+
+            window.mapTourTimer = setTimeout(runMapTour, 1200);
         }
 
         async function registerServiceWorker() {
@@ -4260,6 +4538,7 @@
         window.addEventListener('load', async () => {
             lucide.createIcons();
             applyInputGuards(document);
+            setupSessionActivityTracking();
             try {
                 initMap();
             } catch (error) {
@@ -4284,6 +4563,7 @@
                 });
             }
             await registerServiceWorker();
+            await restorePersistedSession();
         });
 
         function initPsychologicalElements() {
