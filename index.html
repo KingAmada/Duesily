@@ -695,7 +695,7 @@
         let realtimeChannel = null;
         const chartStore = {};
         const ESTATE_SIGNUPS_TABLE = 'duesily_estate_signups';
-        const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns'];
+        const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns', 'duesily_disbursement_approvals'];
 
         // Global Production App State (Completely Empty Initial State)
         const nowForFinanceFilters = new Date();
@@ -721,6 +721,7 @@
             totalBalance: 0,
             incomes: [],
             expenses: [],
+            disbursementApprovals: [],
             vendors: [],
             residents: [],
             polls: [],
@@ -752,6 +753,7 @@
         const entityTableMap = {
             incomes: 'duesily_incomes',
             expenses: 'duesily_expenses',
+            disbursementApprovals: 'duesily_disbursement_approvals',
             vendors: 'duesily_vendors',
             residents: 'duesily_residents',
             polls: 'duesily_polls',
@@ -761,6 +763,7 @@
         const defaultRows = {
             incomes: [],
             expenses: [],
+            disbursementApprovals: [],
             vendors: [],
             residents: [],
             polls: [],
@@ -982,6 +985,33 @@
                 .filter(actor => actor.id !== currentActorKey)
                 .map(actor => `<option value="${actor.id}">${actor.name} • ${actor.role}</option>`)
                 .join('');
+        }
+
+        function getCurrentApprovalActor() {
+            const actorKey = getCurrentAdminActorKey();
+            return getEstateApprovalActors().find(actor => actor.id === actorKey) || null;
+        }
+
+        function getPendingApprovalRequests() {
+            return [...state.disbursementApprovals]
+                .filter(request => toStr(request.status).toLowerCase() === 'pending')
+                .sort((a, b) => new Date(b.createdAt || b.date || 0) - new Date(a.createdAt || a.date || 0));
+        }
+
+        function getRecentApprovalRequests(limit = 12) {
+            return [...state.disbursementApprovals]
+                .sort((a, b) => new Date(b.createdAt || b.date || 0) - new Date(a.createdAt || a.date || 0))
+                .slice(0, limit);
+        }
+
+        function canCurrentAdminApproveRequest(request) {
+            if (state.userType !== 'admin') return false;
+            if (toStr(request?.status).toLowerCase() !== 'pending') return false;
+            return toStr(request?.requestedByActorId) !== getCurrentAdminActorKey();
+        }
+
+        function getReviewablePendingApprovalCount() {
+            return state.disbursementApprovals.filter(request => canCurrentAdminApproveRequest(request)).length;
         }
 
         function clearTenantCollections() {
@@ -1503,6 +1533,7 @@
             const orderColumn = {
                 duesily_incomes: 'date',
                 duesily_expenses: 'date',
+                duesily_disbursement_approvals: 'createdAt',
                 duesily_vendors: 'id',
                 duesily_residents: 'id',
                 duesily_polls: 'ends',
@@ -1563,6 +1594,7 @@
             const tableOrderColumns = {
                 duesily_incomes: 'date',
                 duesily_expenses: 'date',
+                duesily_disbursement_approvals: 'createdAt',
                 duesily_vendors: 'id',
                 duesily_residents: 'id',
                 duesily_polls: 'ends',
@@ -1588,6 +1620,7 @@
             await Promise.all([
                 fetchTable('duesily_incomes', 'incomes'),
                 fetchTable('duesily_expenses', 'expenses'),
+                fetchTable('duesily_disbursement_approvals', 'disbursementApprovals'),
                 fetchTable('duesily_vendors', 'vendors'),
                 fetchTable('duesily_residents', 'residents'),
                 fetchTable('duesily_polls', 'polls'),
@@ -1621,7 +1654,9 @@
             const channel = supabase.channel(`schema-db-changes-${estateId}`);
             
             TENANT_TABLES.forEach(table => {
-                const stateKey = table.replace('duesily_', '');
+                const stateKey = table === 'duesily_disbursement_approvals'
+                    ? 'disbursementApprovals'
+                    : table.replace('duesily_', '');
                 channel.on(
                     'postgres_changes',
                     { event: '*', schema: 'public', table, filter: `estateId=eq.${estateId}` },
@@ -2392,12 +2427,22 @@
                 { id: 'voting', icon: 'check-square', label: 'Voting' },
                 { id: 'vendors', icon: 'users', label: 'Vendors' }
             ];
-            if (state.userType === 'admin') tabs.push({ id: 'manage', icon: 'settings', label: 'Manage' });
+            if (state.userType === 'admin') {
+                tabs.push({
+                    id: 'manage',
+                    icon: 'settings',
+                    label: 'Manage',
+                    badge: getReviewablePendingApprovalCount()
+                });
+            }
 
             nav.innerHTML = tabs.map(t => `
                 <button onclick="window.switchTab('${t.id}')" class="nav-item flex flex-col items-center gap-1 transition-all" id="nav-${t.id}">
-                    <div class="icon-box p-2 rounded-xl transition-colors">
+                    <div class="icon-box p-2 rounded-xl transition-colors relative">
                         <i data-lucide="${t.icon}" class="w-6 h-6"></i>
+                        ${t.badge ? `
+                        <span class="absolute -top-2 -right-2 min-w-[1.2rem] h-[1.2rem] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-md shadow-rose-200">${t.badge > 99 ? '99+' : t.badge}</span>
+                        ` : ''}
                     </div>
                     <span class="text-[10px] font-bold">${t.label}</span>
                 </button>
@@ -3249,7 +3294,7 @@
                     </div>
                     <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
                         <span class="text-xs font-bold text-gray-400 uppercase">Approved By</span>
-                        <span class="text-sm font-bold text-gray-800">${expense.approver}</span>
+                        <span class="text-sm font-bold text-gray-800">${expense.approver}${expense.approverRole ? ` (${expense.approverRole})` : ''}</span>
                     </div>
                 </div>
                 <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
@@ -3711,6 +3756,58 @@
 
             manage: () => `
                 <h3 class="font-bold text-2xl text-gray-800 mb-6">Admin Controls</h3>
+
+                <div class="flex justify-between items-center mb-4 px-2">
+                    <h4 class="font-bold text-gray-800">Approval Queue</h4>
+                    <span class="text-xs font-bold ${getPendingApprovalRequests().length ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50'} px-2 py-1 rounded-md">${getPendingApprovalRequests().length} Pending</span>
+                </div>
+                <div class="space-y-3 mb-8">
+                    ${getRecentApprovalRequests().length ? getRecentApprovalRequests().map(request => {
+                        const vendor = state.vendors.find(v => normalizeId(v.id) === normalizeId(request.vendorId));
+                        const status = toStr(request.status).toLowerCase();
+                        const statusClasses = status === 'approved'
+                            ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                            : status === 'rejected'
+                                ? 'text-rose-600 bg-rose-50 border-rose-100'
+                                : 'text-amber-700 bg-amber-50 border-amber-100';
+                        const actorBlocked = toStr(request.requestedByActorId) === getCurrentAdminActorKey();
+                        return `
+                        <div class="white-card p-4 border border-transparent hover:border-gray-100 transition-all">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="font-bold text-sm text-gray-800">${request.title}</p>
+                                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">${getExpenseCategoryDisplay(request)}</p>
+                                </div>
+                                <span class="text-[10px] font-bold px-3 py-1 rounded-full border ${statusClasses}">${status || 'pending'}</span>
+                            </div>
+                            <div class="mt-3 grid grid-cols-2 gap-3 text-[11px] text-gray-500">
+                                <p><span class="font-bold text-gray-700">Amount:</span> ${formatCurrency(request.amount)}</p>
+                                <p><span class="font-bold text-gray-700">Vendor:</span> ${vendor?.name || 'Unknown Vendor'}</p>
+                                <p><span class="font-bold text-gray-700">Logged By:</span> ${request.requestedBy || 'Admin'}</p>
+                                <p><span class="font-bold text-gray-700">When:</span> ${formatDate(request.createdAt || request.date)}</p>
+                            </div>
+                            ${status === 'approved' ? `
+                            <div class="mt-3 rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-[11px] text-emerald-700">
+                                Approved by <span class="font-bold">${request.approver || 'Admin'}</span>${request.approvedAt ? ` on ${formatDate(request.approvedAt)}` : ''}.
+                            </div>
+                            ` : status === 'rejected' ? `
+                            <div class="mt-3 rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3 text-[11px] text-rose-700">
+                                Rejected by <span class="font-bold">${request.approver || 'Admin'}</span>${request.rejectionReason ? ` • ${request.rejectionReason}` : ''}.
+                            </div>
+                            ` : actorBlocked ? `
+                            <div class="mt-3 rounded-2xl bg-gray-50 border border-gray-100 px-4 py-3 text-[11px] text-gray-500">
+                                Waiting for another admin to review this request.
+                            </div>
+                            ` : `
+                            <div class="mt-4 flex gap-3">
+                                <button onclick="window.approveDisbursementRequest('${request.id}')" class="flex-1 py-3 rounded-2xl bg-emerald-600 text-white text-xs font-bold shadow-lg shadow-emerald-100 active:scale-95 transition-transform">Approve</button>
+                                <button onclick="window.openRejectDisbursementModal('${request.id}')" class="flex-1 py-3 rounded-2xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-100 active:scale-95 transition-transform">Reject</button>
+                            </div>
+                            `}
+                        </div>
+                        `;
+                    }).join('') : '<p class="text-center text-gray-400 py-8 border border-dashed rounded-2xl">No disbursement approvals yet.</p>'}
+                </div>
                 
                 <h4 class="font-bold text-gray-800 mb-4 px-2">Operations</h4>
                 <div class="grid grid-cols-3 gap-3 mb-8">
@@ -4360,18 +4457,9 @@
                     <select id="disburse-subcategory" disabled class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100 disabled:text-gray-400 disabled:cursor-not-allowed">
                         <option value="">Select category first...</option>
                     </select>
-
-                    <div class="bg-amber-50 border border-amber-100 rounded-[1.5rem] p-4 space-y-3">
-                        <div>
-                            <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest">Approval Required</p>
-                            <p class="text-xs text-amber-700 mt-1">Another admin must approve this disbursement before it can be logged.</p>
-                        </div>
-                        <select id="disburse-approver" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-amber-100">
-                            <option value="">Select Approving Admin...</option>
-                            ${getApprovalActorOptionsHtml()}
-                        </select>
-                        <input type="text" id="disburse-approval-login" placeholder="Approver Email or Phone" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-amber-100" data-trim-input maxlength="120" autocapitalize="off">
-                        <input type="password" id="disburse-approval-password" placeholder="Approver Password" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-amber-100" maxlength="64" autocomplete="current-password">
+                    <div class="bg-amber-50 border border-amber-100 rounded-[1.5rem] p-4">
+                        <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest">Approval Workflow</p>
+                        <p class="text-xs text-amber-700 mt-1">Submitting this will notify other admin staff in the Manage tab. The expense is only posted after another admin approves it.</p>
                     </div>
 
                     <button onclick="window.saveDisbursement()" class="w-full mt-4 py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-all">Record Expense</button>
@@ -4580,6 +4668,8 @@
         window.saveDisbursement = async () => {
             const adminSession = getCurrentAdminSession();
             if (!adminSession?.account) return window.showToast('Admin session not found');
+            const requester = getCurrentApprovalActor();
+            if (!requester) return window.showToast('Admin approval identity not found');
             const title = readTextField('disburse-title', 'Expense description', { min: 3, max: 100 });
             if (!title) return;
             const amount = readCurrencyField('disburse-amount', 'Amount');
@@ -4587,59 +4677,164 @@
             const vendorId = toStr(document.getElementById('disburse-vendor').value);
             const category = toStr(document.getElementById('disburse-category').value);
             const subCategory = toStr(document.getElementById('disburse-subcategory')?.value);
-            const selectedApproverId = toStr(document.getElementById('disburse-approver')?.value);
-            const approvalLogin = readLoginIdentifierField('disburse-approval-login');
-            if (!approvalLogin) return;
-            const approvalPassword = readPasswordField('disburse-approval-password', 'Approver password');
-            if (!approvalPassword) return;
             if(!vendorId) return window.showToast("Select a vendor");
             if(!category) return window.showToast("Select a category");
             if(!subCategory) return window.showToast("Select a subcategory");
-            if(!selectedApproverId) return window.showToast("Select an approving admin");
             if (!ensureOnlineMutation('log disbursements')) return;
 
-            const approver = getEstateApprovalActors().find(actor => actor.id === selectedApproverId);
-            if (!approver) return window.showToast('Approving admin not found');
-            if (approver.id === getCurrentAdminActorKey()) {
-                return window.showToast('A different admin must approve this disbursement');
-            }
-
-            const normalizedApprovalLogin = toStr(approvalLogin).toLowerCase();
-            const normalizedApprovalPhone = normalizePhone(approvalLogin);
-            const approverMatches =
-                (approver.email && approver.email === normalizedApprovalLogin)
-                || (approver.phone && approver.phone === normalizedApprovalPhone);
-            if (!approverMatches) {
-                return window.showToast('Approver identity does not match the selected admin');
-            }
-
-            const approvalHash = await hashPassword(approvalPassword);
-            if (approvalHash !== adminSession.account.passwordHash) {
-                return window.showToast('Invalid approver password');
-            }
-
-            const expensePayload = withCurrentEstate({
+            const approvalRequestPayload = withCurrentEstate({
                 id: generateId(),
                 title,
                 category,
                 subCategory,
                 amount,
                 date: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
                 icon: 'banknote',
                 color: 'bg-rose-500',
                 vendorId,
-                approver: `${approver.name}${approver.role ? ` (${approver.role})` : ''}`
+                status: 'pending',
+                requestedBy: requester.name,
+                requestedByRole: requester.role,
+                requestedByActorId: requester.id,
+                approver: '',
+                approverRole: '',
+                approvedAt: '',
+                rejectedAt: '',
+                rejectionReason: '',
+                expenseId: ''
             });
-            const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
-            if (expenseInsert.error) {
-                console.error('Failed to log disbursement:', expenseInsert.error);
-                return window.showToast('Could not log disbursement');
+            const approvalInsert = await supabase.from('duesily_disbursement_approvals').insert([approvalRequestPayload]).select().single();
+            if (approvalInsert.error) {
+                console.error('Failed to queue disbursement approval:', approvalInsert.error);
+                return window.showToast('Could not submit disbursement for approval');
             }
             
-            upsertLocalRecord('expenses', expenseInsert.data);
+            upsertLocalRecord('disbursementApprovals', approvalInsert.data);
             updateGlobalState();
-            window.showToast('Disbursement Logged!');
+            window.showToast('Disbursement submitted for approval');
             window.closeModal();
+        };
+
+        window.approveDisbursementRequest = async function(requestId) {
+            const request = state.disbursementApprovals.find(item => normalizeId(item.id) === normalizeId(requestId));
+            if (!request) return window.showToast('Approval request not found');
+            if (!canCurrentAdminApproveRequest(request)) {
+                return window.showToast('Another admin must approve this disbursement');
+            }
+            if (!ensureOnlineMutation('approve disbursements')) return;
+
+            const approver = getCurrentApprovalActor();
+            if (!approver) return window.showToast('Approver identity not found');
+
+            const expensePayload = withCurrentEstate({
+                id: generateId(),
+                title: request.title,
+                category: request.category,
+                subCategory: request.subCategory,
+                amount: request.amount,
+                date: request.date || new Date().toISOString(),
+                icon: request.icon || 'banknote',
+                color: request.color || 'bg-rose-500',
+                vendorId: request.vendorId,
+                approver: `${approver.name}${approver.role ? ` (${approver.role})` : ''}`
+            });
+
+            const expenseInsert = await supabase.from('duesily_expenses').insert([expensePayload]).select().single();
+            if (expenseInsert.error) {
+                console.error('Failed to post approved disbursement:', expenseInsert.error);
+                return window.showToast('Could not create the expense record');
+            }
+
+            const approvalUpdate = await supabase
+                .from('duesily_disbursement_approvals')
+                .update({
+                    status: 'approved',
+                    approver: approver.name,
+                    approverRole: approver.role,
+                    approvedAt: new Date().toISOString(),
+                    expenseId: expenseInsert.data.id,
+                    updatedAt: new Date().toISOString()
+                })
+                .eq('id', request.id)
+                .eq('estateId', getCurrentEstateId())
+                .select()
+                .single();
+
+            if (approvalUpdate.error) {
+                console.error('Failed to update approval request:', approvalUpdate.error);
+                return window.showToast('Expense was created, but approval status could not be updated');
+            }
+
+            upsertLocalRecord('expenses', expenseInsert.data);
+            upsertLocalRecord('disbursementApprovals', approvalUpdate.data);
+            updateGlobalState();
+            window.showToast('Disbursement approved and posted');
+        };
+
+        window.openRejectDisbursementModal = function(requestId) {
+            const request = state.disbursementApprovals.find(item => normalizeId(item.id) === normalizeId(requestId));
+            if (!request) return window.showToast('Approval request not found');
+            if (!canCurrentAdminApproveRequest(request)) {
+                return window.showToast('Another admin must review this request');
+            }
+
+            const content = `
+                <h2 class="text-2xl font-bold mb-2 text-rose-600">Reject Disbursement</h2>
+                <p class="text-sm text-gray-500 mb-6">Add a short reason so the requesting admin understands what to fix.</p>
+                <div class="space-y-4">
+                    <div class="bg-gray-50 rounded-2xl p-4">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Request</p>
+                        <p class="font-bold text-sm text-gray-800">${request.title}</p>
+                        <p class="text-xs text-gray-500 mt-1">${getExpenseCategoryDisplay(request)} • ${formatCurrency(request.amount)}</p>
+                    </div>
+                    <textarea id="reject-disbursement-reason" placeholder="Why is this being rejected?" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-rose-100 h-28 resize-none" data-trim-input maxlength="200"></textarea>
+                    <button onclick="window.rejectDisbursementRequest('${request.id}')" class="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 active:scale-95 transition-transform">Reject Request</button>
+                </div>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+            applyInputGuards(document.getElementById('modal-content'));
+        };
+
+        window.rejectDisbursementRequest = async function(requestId) {
+            const request = state.disbursementApprovals.find(item => normalizeId(item.id) === normalizeId(requestId));
+            if (!request) return window.showToast('Approval request not found');
+            if (!canCurrentAdminApproveRequest(request)) {
+                return window.showToast('Another admin must review this request');
+            }
+            const reason = readTextField('reject-disbursement-reason', 'Rejection reason', { min: 5, max: 200 });
+            if (!reason) return;
+            if (!ensureOnlineMutation('reject disbursements')) return;
+
+            const approver = getCurrentApprovalActor();
+            if (!approver) return window.showToast('Approver identity not found');
+
+            const approvalUpdate = await supabase
+                .from('duesily_disbursement_approvals')
+                .update({
+                    status: 'rejected',
+                    approver: approver.name,
+                    approverRole: approver.role,
+                    rejectedAt: new Date().toISOString(),
+                    rejectionReason: reason,
+                    updatedAt: new Date().toISOString()
+                })
+                .eq('id', request.id)
+                .eq('estateId', getCurrentEstateId())
+                .select()
+                .single();
+
+            if (approvalUpdate.error) {
+                console.error('Failed to reject disbursement request:', approvalUpdate.error);
+                return window.showToast('Could not reject disbursement');
+            }
+
+            upsertLocalRecord('disbursementApprovals', approvalUpdate.data);
+            updateGlobalState();
+            window.closeModal();
+            window.showToast('Disbursement request rejected');
         };
 
         window.savePoll = async () => {
