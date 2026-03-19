@@ -1529,13 +1529,6 @@
                 .join('');
         }
 
-        function getBankOptionsHtml(selectedBank = '') {
-            const normalizedSelectedBank = toStr(selectedBank);
-            return BANK_NAME_OPTIONS
-                .map(bank => `<option value="${escapeHtml(bank)}"${bank === normalizedSelectedBank ? ' selected' : ''}>${escapeHtml(bank)}</option>`)
-                .join('');
-        }
-
         function getExpenseCategoryDisplay(expense) {
             const category = toStr(expense?.category) || 'Expense';
             const subCategory = toStr(expense?.subCategory);
