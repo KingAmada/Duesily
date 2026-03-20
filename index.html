@@ -739,6 +739,7 @@
             currentEstateId: null,
             currentEstateRecord: null,
             currentResidentMemberships: [],
+            editingVendorId: null,
             forcePasswordChange: false,
             isOffline: !navigator.onLine
         };
@@ -4409,7 +4410,13 @@
                         </div>
                     `).join('') : '<p class="text-sm text-gray-400">No transactions recorded.</p>'}
                 </div>
-                <button onclick="window.closeModal()" class="w-full mt-8 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg">Close Details</button>
+                <div class="space-y-3 mt-8">
+                    ${state.userType === 'admin' ? `
+                    <button onclick="window.openEditVendor('${vendor.id}')" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Edit Vendor</button>
+                    <button onclick="window.deleteVendor('${vendor.id}')" class="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-100 active:scale-95 transition-transform">Delete Vendor</button>
+                    ` : ''}
+                    <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg">Close Details</button>
+                </div>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
@@ -5879,14 +5886,18 @@
             applyInputGuards(document.getElementById('modal-content'));
         };
 
-        window.openAddVendor = function() {
+        window.openAddVendor = function(vendorId = '') {
+            const vendor = vendorId ? getVendorById(vendorId) : null;
+            state.editingVendorId = vendor ? vendor.id : null;
+            const vendorAccounts = normalizeVendorBankAccounts(vendor?.bankAccounts || []);
+            const primaryAccount = vendorAccounts[0] || {};
             document.getElementById('modal-content').innerHTML = `
-                <h2 class="text-2xl font-bold mb-6">Partner Onboarding</h2>
+                <h2 class="text-2xl font-bold mb-6">${vendor ? 'Edit Vendor' : 'Partner Onboarding'}</h2>
                 <div class="space-y-4">
-                    <input type="text" id="ven-name" placeholder="Company/Individual Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
-                    <input type="tel" id="ven-phone" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
-                    <input type="email" id="ven-email" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
-                    <input type="text" id="ven-address" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="140">
+                    <input type="text" id="ven-name" value="${escapeHtml(vendor?.name || '')}" placeholder="Company/Individual Name" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
+                    <input type="tel" id="ven-phone" value="${escapeHtml(vendor?.contact || '')}" placeholder="Phone Number" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-phone-input>
+                    <input type="email" id="ven-email" value="${escapeHtml(vendor?.email || '')}" placeholder="Email Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="120" autocapitalize="off">
+                    <input type="text" id="ven-address" value="${escapeHtml(vendor?.address || '')}" placeholder="Office Address" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="140">
                     
                     <select id="ven-service" onchange="window.refreshVendorSubcategories(this.value)" class="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100">
                         <option value="">Select Main Category...</option>
@@ -5906,16 +5917,32 @@
                             <option value="">Select Bank...</option>
                             ${getBankOptionsHtml()}
                         </select>
-                        <input type="text" id="ven-account-number" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" inputmode="numeric" maxlength="10" data-digit-input>
-                        <input type="text" id="ven-account-name" placeholder="Account Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
+                        <input type="text" id="ven-account-number" value="${escapeHtml(primaryAccount.accountNumber || '')}" placeholder="Account Number" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" inputmode="numeric" maxlength="10" data-digit-input>
+                        <input type="text" id="ven-account-name" value="${escapeHtml(primaryAccount.accountName || '')}" placeholder="Account Name" class="w-full p-4 bg-white rounded-2xl border-0 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" data-trim-input maxlength="100">
                     </div>
 
-                    <button onclick="window.saveVendor()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Vendor</button>
+                    <button onclick="window.saveVendor()" class="w-full mt-4 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">${vendor ? 'Update Vendor' : 'Save Vendor'}</button>
                 </div>
             `;
             document.getElementById('modal-container').classList.remove('hidden');
             applyInputGuards(document.getElementById('modal-content'));
-            window.refreshVendorSubcategories();
+            const categorySelect = document.getElementById('ven-service');
+            const bankSelect = document.getElementById('ven-bank-name');
+            if (categorySelect && vendor?.service) {
+                categorySelect.value = vendor.service;
+            }
+            window.refreshVendorSubcategories(vendor?.service || '');
+            const subSelect = document.getElementById('ven-sub');
+            if (subSelect && vendor?.subCategory) {
+                subSelect.value = vendor.subCategory;
+            }
+            if (bankSelect && primaryAccount.bankName) {
+                bankSelect.value = primaryAccount.bankName;
+            }
+        };
+
+        window.openEditVendor = function(vendorId) {
+            return window.openAddVendor(vendorId);
         };
 
         window.confirmPayment = async () => {
@@ -6298,6 +6325,7 @@
         window.saveVendor = async () => {
             const estateId = getCurrentEstateId();
             if (!estateId) return window.showToast('Estate context is missing. Refresh the app and log in again.');
+            const editingVendorId = normalizeId(state.editingVendorId);
             const name = readTextField('ven-name', 'Vendor name', { min: 2, max: 100 });
             if (!name) return;
             const contact = readPhoneField('ven-phone', 'Vendor phone');
@@ -6317,22 +6345,74 @@
 
             if(!service) return window.showToast('Select a vendor service');
             if(!subCategory) return window.showToast('Select a vendor subcategory');
-            if (!ensureOnlineMutation('add vendors')) return;
+            if (!ensureOnlineMutation(editingVendorId ? 'update vendors' : 'add vendors')) return;
 
             const bankAccounts = normalizeVendorBankAccounts([
                 { id: generateId(), bankName, accountNumber, accountName }
             ]);
 
-            const { data, error } = await supabase.from('duesily_vendors').insert([withCurrentEstate({ id: generateId(), name, service, subCategory, rating: 5.0, contact, email, address, transactions: [], bankAccounts })]).select().single();
+            const vendorPayload = withCurrentEstate({
+                id: editingVendorId || generateId(),
+                name,
+                service,
+                subCategory,
+                rating: Number(getVendorById(editingVendorId)?.rating || 5.0),
+                contact,
+                email,
+                address,
+                transactions: getVendorById(editingVendorId)?.transactions || [],
+                bankAccounts
+            });
+
+            const query = editingVendorId
+                ? supabase.from('duesily_vendors').update(vendorPayload).eq('id', editingVendorId).eq('estateId', estateId)
+                : supabase.from('duesily_vendors').insert([vendorPayload]);
+            const { data, error } = await query.select().single();
             if (error) {
-                console.error('Failed to create vendor:', error);
-                return window.showToast('Could not add vendor');
+                console.error(`Failed to ${editingVendorId ? 'update' : 'create'} vendor:`, error);
+                return window.showToast(editingVendorId ? 'Could not update vendor' : 'Could not add vendor');
             }
 
             upsertLocalRecord('vendors', data);
             updateGlobalState();
-            window.showToast('Vendor Added!');
+            state.editingVendorId = null;
+            window.showToast(editingVendorId ? 'Vendor updated successfully' : 'Vendor Added!');
             window.closeModal();
+        };
+
+        window.deleteVendor = async (vendorId) => {
+            const normalizedVendorId = normalizeId(vendorId);
+            const estateId = getCurrentEstateId();
+            const vendor = getVendorById(normalizedVendorId);
+            if (!normalizedVendorId || !estateId || !vendor) {
+                return window.showToast('Vendor record could not be found');
+            }
+            if (!ensureOnlineMutation('delete vendors')) return;
+
+            const hasExpenseHistory = getVendorExpenseRecords(normalizedVendorId).length > 0;
+            const warning = hasExpenseHistory
+                ? `Delete ${vendor.name}? Past expense records will remain, but this vendor will be removed from the directory.`
+                : `Delete ${vendor.name} from this estate directory?`;
+            if (!window.confirm(warning)) return;
+
+            const { error } = await supabase
+                .from('duesily_vendors')
+                .delete()
+                .eq('id', normalizedVendorId)
+                .eq('estateId', estateId);
+
+            if (error) {
+                console.error('Failed to delete vendor:', error);
+                return window.showToast('Could not delete vendor');
+            }
+
+            state.vendors = sanitizeCollection(state.vendors).filter(entry => normalizeId(entry.id) !== normalizedVendorId);
+            if (normalizeId(state.editingVendorId) === normalizedVendorId) {
+                state.editingVendorId = null;
+            }
+            updateGlobalState();
+            window.closeModal();
+            window.showToast('Vendor deleted successfully');
         };
 
         window.updateResidentProfile = async () => {
@@ -6442,6 +6522,7 @@
             processFunding: 'Refreshing...',
             saveResident: 'Saving...',
             saveVendor: 'Saving...',
+            deleteVendor: 'Deleting...',
             updateResidentProfile: 'Saving...',
             deleteResident: 'Deleting...',
             openFundCampaignModal: 'Preparing...',
@@ -6465,6 +6546,7 @@
             'processFunding',
             'saveResident',
             'saveVendor',
+            'deleteVendor',
             'updateResidentProfile',
             'deleteResident',
             'openFundCampaignModal',
