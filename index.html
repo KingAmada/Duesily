@@ -2529,8 +2529,22 @@
             const estateId = getCurrentEstateId();
             if (!supabase || !estateId) return;
 
+            const showRealtimeIncomeToast = payload => {
+                const income = sanitizeForState(payload?.new || {});
+                if (!normalizeId(income.id)) return;
+                const resident = state.residents.find(entry => normalizeId(entry.id) === normalizeId(income.residentId))
+                    || getCurrentResidentMemberships().find(entry => normalizeId(entry.id) === normalizeId(income.residentId));
+                const payerName = resident?.name || income.title || 'Resident';
+                window.showToast(`Payment received! ${formatCurrency(income.amount || 0)} from ${payerName}`);
+            };
+
             const handlePayload = (payload, stateKey) => {
+                const existsAlready = Array.isArray(state[stateKey])
+                    && state[stateKey].some(item => normalizeId(item.id) === normalizeId(payload?.new?.id || payload?.old?.id));
                 if (payload.eventType === 'INSERT') {
+                    if (stateKey === 'incomes' && !existsAlready) {
+                        showRealtimeIncomeToast(payload);
+                    }
                     upsertLocalRecord(stateKey, payload.new);
                 } else if (payload.eventType === 'UPDATE') {
                     upsertLocalRecord(stateKey, payload.new);
@@ -5116,6 +5130,11 @@
                                 <p><span class="font-bold text-gray-700">Vendor:</span> ${vendor?.name || 'Unknown Vendor'}</p>
                                 <p><span class="font-bold text-gray-700">Logged By:</span> ${request.requestedBy || 'Admin'}</p>
                                 <p><span class="font-bold text-gray-700">When:</span> ${formatDate(request.createdAt || request.date)}</p>
+                            </div>
+                            <div class="mt-3 rounded-2xl bg-gray-50 border border-gray-100 px-4 py-3 text-[11px] text-gray-500">
+                                <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Payout Destination</p>
+                                <p class="font-semibold text-gray-700">${request.payoutBankName || 'Bank not set'}${request.payoutAccountNumber ? ` • ${request.payoutAccountNumber}` : ''}</p>
+                                <p class="mt-1">${request.payoutAccountName || 'Account name not set'}</p>
                             </div>
                             ${status === 'approved' ? `
                             <div class="mt-3 rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-[11px] text-emerald-700">
