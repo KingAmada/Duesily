@@ -701,6 +701,8 @@
         let deferredInstallPrompt = null;
         let realtimeChannel = null;
         let sessionActivityTimeout = null;
+        let realtimeDisabled = false;
+        let realtimeWarningShown = false;
         const chartStore = {};
         const ESTATE_SIGNUPS_TABLE = 'duesily_estate_signups';
         const TENANT_TABLES = ['duesily_incomes', 'duesily_expenses', 'duesily_vendors', 'duesily_residents', 'duesily_polls', 'duesily_campaigns', 'duesily_disbursement_approvals'];
@@ -2527,7 +2529,7 @@
 
         function setupRealtimeListeners() {
             const estateId = getCurrentEstateId();
-            if (!supabase || !estateId) return;
+            if (!supabase || !estateId || realtimeDisabled) return;
 
             const showRealtimeIncomeToast = payload => {
                 const income = sanitizeForState(payload?.new || {});
@@ -2567,9 +2569,19 @@
                 );
             });
 
-            channel.subscribe(status => {
-                if (status === 'CHANNEL_ERROR') {
-                    console.error('Realtime channel subscription failed.');
+            channel.subscribe(async status => {
+                if (status === 'SUBSCRIBED') {
+                    realtimeDisabled = false;
+                    return;
+                }
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.error(`Realtime channel subscription failed with status: ${status}`);
+                    realtimeDisabled = true;
+                    await teardownRealtimeListeners();
+                    if (!realtimeWarningShown) {
+                        realtimeWarningShown = true;
+                        window.showToast('Live updates are unavailable right now. You can still refresh records manually.');
+                    }
                 }
             });
             realtimeChannel = channel;
@@ -3174,6 +3186,8 @@
                 state.currentResidentId = null;
                 state.currentResidentMemberships = [];
                 state.forcePasswordChange = false;
+                realtimeDisabled = false;
+                realtimeWarningShown = false;
                 clearTenantCollections();
                 teardownRealtimeListeners();
                 window.hideAuthModal();
