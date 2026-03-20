@@ -2024,35 +2024,32 @@
             return sanitizeForState(data);
         }
 
-        function syncResidentAccountState(residentId, accountData = {}) {
+        function syncResidentState(residentId, updates = {}) {
             const normalizedResidentId = normalizeId(residentId);
             if (!normalizedResidentId) return null;
 
             let mergedResident = null;
             state.residents = sanitizeCollection(state.residents).map(resident => {
                 if (normalizeId(resident.id) !== normalizedResidentId) return resident;
-                mergedResident = sanitizeForState({
-                    ...resident,
-                    walletAccountNumber: toStr(accountData.walletAccountNumber) || toStr(resident.walletAccountNumber),
-                    walletStatus: toStr(accountData.walletStatus) || toStr(resident.walletStatus) || 'active',
-                    accountName: toStr(accountData.accountName) || toStr(resident.accountName) || toStr(resident.name),
-                    accountProvider: toStr(accountData.accountProvider) || toStr(resident.accountProvider) || 'Stanbic'
-                });
+                mergedResident = sanitizeForState({ ...resident, ...updates });
                 return mergedResident;
             });
 
             state.currentResidentMemberships = sanitizeCollection(state.currentResidentMemberships).map(resident => {
                 if (normalizeId(resident.id) !== normalizedResidentId) return resident;
-                return sanitizeForState({
-                    ...resident,
-                    walletAccountNumber: toStr(accountData.walletAccountNumber) || toStr(resident.walletAccountNumber),
-                    walletStatus: toStr(accountData.walletStatus) || toStr(resident.walletStatus) || 'active',
-                    accountName: toStr(accountData.accountName) || toStr(resident.accountName) || toStr(resident.name),
-                    accountProvider: toStr(accountData.accountProvider) || toStr(resident.accountProvider) || 'Stanbic'
-                });
+                return sanitizeForState({ ...resident, ...updates });
             });
 
             return mergedResident;
+        }
+
+        function syncResidentAccountState(residentId, accountData = {}) {
+            const updates = {};
+            if (toStr(accountData.walletAccountNumber)) updates.walletAccountNumber = toStr(accountData.walletAccountNumber);
+            if (toStr(accountData.walletStatus)) updates.walletStatus = toStr(accountData.walletStatus);
+            if (toStr(accountData.accountName)) updates.accountName = toStr(accountData.accountName);
+            if (toStr(accountData.accountProvider)) updates.accountProvider = toStr(accountData.accountProvider);
+            return syncResidentState(residentId, updates);
         }
 
         async function ensureResidentVirtualAccount(residentId, { force = false } = {}) {
@@ -2773,6 +2770,63 @@
             });
         }
 
+        const pendingButtonState = new WeakMap();
+        let lastClickedActionButton = null;
+
+        document.addEventListener('click', event => {
+            const button = event.target instanceof Element ? event.target.closest('button') : null;
+            if (button) lastClickedActionButton = button;
+        }, true);
+
+        function resolvePendingButton(button = null) {
+            if (button instanceof HTMLButtonElement) return button;
+            if (lastClickedActionButton instanceof HTMLButtonElement) return lastClickedActionButton;
+            return document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+        }
+
+        function setPendingButtonState(button, label = 'Processing...') {
+            if (!(button instanceof HTMLButtonElement) || pendingButtonState.has(button)) return false;
+            pendingButtonState.set(button, {
+                disabled: button.disabled,
+                html: button.innerHTML,
+                minWidth: button.style.minWidth
+            });
+            button.style.minWidth = `${Math.max(button.offsetWidth || 0, 120)}px`;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.classList.add('opacity-70', 'cursor-not-allowed');
+            button.innerHTML = `
+                <span class="inline-flex items-center justify-center gap-2">
+                    <span class="inline-block w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
+                    <span>${escapeHtml(label)}</span>
+                </span>
+            `;
+            return true;
+        }
+
+        function clearPendingButtonState(button) {
+            if (!(button instanceof HTMLButtonElement)) return;
+            const state = pendingButtonState.get(button);
+            if (!state) return;
+            button.disabled = state.disabled;
+            button.innerHTML = state.html;
+            button.style.minWidth = state.minWidth || '';
+            button.removeAttribute('aria-busy');
+            button.classList.remove('opacity-70', 'cursor-not-allowed');
+            pendingButtonState.delete(button);
+            if (lastClickedActionButton === button) lastClickedActionButton = null;
+        }
+
+        async function withPendingButton(task, { button = null, label = 'Processing...' } = {}) {
+            const targetButton = resolvePendingButton(button);
+            const locked = setPendingButtonState(targetButton, label);
+            try {
+                return await task();
+            } finally {
+                if (locked) clearPendingButtonState(targetButton);
+            }
+        }
+
         window.showToast = function(msg) {
             const toast = document.getElementById('toast');
             toast.innerText = msg;
@@ -2791,7 +2845,7 @@
             ));
         }
 
-        async function residentExistsInEstate({ phone = '', estateId = '' } = {}) {
+        async function residentExistsInEstate({ phone = '', estateId = '', excludeResidentId = '' } = {}) {
             const normalizedPhone = normalizePhone(phone);
             const normalizedEstateId = normalizeId(estateId);
             if (!normalizedPhone || !normalizedEstateId) return false;
@@ -2812,7 +2866,10 @@
                 throw new Error('Could not validate resident record');
             }
 
-            return Array.isArray(data) && data.length > 0;
+            if (!Array.isArray(data) || !data.length) return false;
+            const excludedId = normalizeId(excludeResidentId);
+            if (!excludedId) return true;
+            return data.some(row => normalizeId(row.id) !== excludedId);
         }
 
         function getLegalDocument(type) {
@@ -3040,7 +3097,8 @@
                 if (passwordHash !== adminMatch.account.passwordHash) return window.showToast('Invalid admin credentials');
 
                 window.showToast("Authenticating securely...");
-                setTimeout(() => window.login(type, adminMatch), 800);
+                await new Promise(resolve => setTimeout(resolve, 800));
+                await window.login(type, adminMatch);
                 return;
             }
 
@@ -3079,7 +3137,8 @@
             }
 
             window.showToast("Authenticating securely...");
-            setTimeout(() => window.login(type, null, residentAccounts[0]), 800);
+            await new Promise(resolve => setTimeout(resolve, 800));
+            await window.login(type, null, residentAccounts[0]);
         };
 
         window.logout = function({ silent = false, reason = 'manual' } = {}) {
@@ -4406,7 +4465,12 @@
                     `).join('') : '<p class="text-sm text-gray-400 text-center">No payment history.</p>'}
                 </div>
                 
-                <button onclick="window.closeModal()" class="w-full mt-6 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Profile</button>
+                <div class="space-y-3 mt-6">
+                    ${state.userType === 'admin' ? `
+                    <button onclick="window.deleteResident('${resident.id}')" class="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-100 active:scale-95 transition-transform">Delete Resident</button>
+                    ` : ''}
+                    <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Profile</button>
+                </div>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
@@ -4910,27 +4974,42 @@
                     ` : ''}
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Estate</label>
-                        <input type="text" value="${estateName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        <input type="text" value="${estateName}" readonly class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors ${state.userType === 'resident' ? 'text-gray-500' : ''}">
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">${state.userType === 'admin' ? 'Staff Name' : 'Full Name'}</label>
-                        <input type="text" value="${userName}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        <input ${state.userType === 'resident' ? 'id="resident-profile-name"' : ''} type="text" value="${userName}" ${state.userType === 'admin' ? 'readonly' : 'data-trim-input'} class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors ${state.userType === 'admin' ? 'text-gray-500' : ''}">
                     </div>
                     ${state.userType === 'admin' ? `
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Designation</label>
-                        <input type="text" value="${userRole}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        <input type="text" value="${userRole}" readonly class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm text-gray-500 outline-none focus:border-indigo-600 transition-colors">
                     </div>
                     ` : ''}
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Email Address</label>
-                        <input type="email" value="${userEmail}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        <input ${state.userType === 'resident' ? 'id="resident-profile-email"' : ''} type="email" value="${userEmail}" ${state.userType === 'admin' ? 'readonly' : 'data-trim-input'} class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors ${state.userType === 'admin' ? 'text-gray-500' : ''}">
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Phone Number</label>
-                        <input type="tel" value="${userPhone}" class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        <input ${state.userType === 'resident' ? 'id="resident-profile-phone"' : ''} type="tel" value="${userPhone}" ${state.userType === 'admin' ? 'readonly' : 'data-phone-input'} class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors ${state.userType === 'admin' ? 'text-gray-500' : ''}">
                     </div>
                     ${state.userType === 'resident' ? `
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">House</label>
+                            <input id="resident-profile-house" type="text" value="${residentData.house || ''}" data-trim-input class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Flat / Unit</label>
+                            <input id="resident-profile-flat" type="text" value="${residentData.flat || ''}" data-trim-input class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-4">Street Address</label>
+                        <input id="resident-profile-street" type="text" value="${residentData.street || ''}" data-trim-input class="w-full p-4 bg-white rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:border-indigo-600 transition-colors">
+                    </div>
+                    <button onclick="window.updateResidentProfile()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Save Changes</button>
                     <button onclick="window.openResidentPasswordChangeModal()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Change Password</button>
                     ${residentMemberships.length > 1 ? `
                     <button onclick="window.openResidentEstatePicker(window.getCurrentResidentMemberships(), { title: 'Switch Estate', subtitle: 'Choose another estate workspace to view.' })" class="w-full py-4 bg-white text-indigo-700 border border-indigo-100 rounded-2xl font-bold shadow-sm active:scale-95 transition-transform">Switch Estate</button>
@@ -6255,6 +6334,152 @@
             window.showToast('Vendor Added!');
             window.closeModal();
         };
+
+        window.updateResidentProfile = async () => {
+            const resident = getCurrentResident();
+            const estateId = getCurrentEstateId();
+            if (!resident?.id || !estateId) {
+                return window.showToast('Resident session is missing. Please log in again.');
+            }
+            if (!ensureOnlineMutation('update resident profile')) return;
+
+            const name = readTextField('resident-profile-name', 'Full name', {
+                min: 2,
+                max: 80,
+                pattern: /^[a-zA-Z .'-]+$/,
+                patternMessage: 'Full name contains invalid characters'
+            });
+            if (!name) return;
+            const email = readEmailField('resident-profile-email', 'Email address', { required: false });
+            if (email === false) return;
+            const phone = readPhoneField('resident-profile-phone', 'Phone number');
+            if (!phone) return;
+            const house = readTextField('resident-profile-house', 'House number', { min: 1, max: 20, pattern: /^[a-zA-Z0-9/-]+$/ });
+            if (!house) return;
+            const flat = readOptionalTextField('resident-profile-flat', 'Flat or unit', {
+                max: 20,
+                pattern: /^[a-zA-Z0-9/-]+$/,
+                patternMessage: 'Flat or unit contains invalid characters'
+            });
+            if (flat === false) return;
+            const street = readTextField('resident-profile-street', 'Street address', { min: 3, max: 120 });
+            if (!street) return;
+
+            try {
+                if (await residentExistsInEstate({ phone, estateId, excludeResidentId: resident.id })) {
+                    return window.showToast('Another resident already uses this phone number in this estate');
+                }
+            } catch (error) {
+                return window.showToast(error.message || 'Could not validate resident record');
+            }
+
+            const updatePayload = { name, email, phone, house, flat, street };
+            const { data, error } = await supabase
+                .from('duesily_residents')
+                .update(updatePayload)
+                .eq('id', resident.id)
+                .eq('estateId', estateId)
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Failed to update resident profile:', error);
+                return window.showToast('Could not update profile');
+            }
+
+            syncResidentState(resident.id, data || updatePayload);
+            persistCurrentSession();
+            bumpSessionActivity();
+            updateGlobalState();
+            window.showToast('Profile updated successfully');
+        };
+
+        window.deleteResident = async (residentId) => {
+            const normalizedResidentId = normalizeId(residentId);
+            const estateId = getCurrentEstateId();
+            const resident = state.residents.find(entry => normalizeId(entry.id) === normalizedResidentId);
+            if (!normalizedResidentId || !estateId || !resident) {
+                return window.showToast('Resident record could not be found');
+            }
+            if (!ensureOnlineMutation('delete residents')) return;
+            if (!window.confirm(`Delete ${resident.name} from this estate? This action cannot be undone.`)) {
+                return;
+            }
+
+            const { error } = await supabase
+                .from('duesily_residents')
+                .delete()
+                .eq('id', normalizedResidentId)
+                .eq('estateId', estateId);
+
+            if (error) {
+                console.error('Failed to delete resident:', error);
+                return window.showToast('Could not delete resident');
+            }
+
+            state.residents = sanitizeCollection(state.residents).filter(entry => normalizeId(entry.id) !== normalizedResidentId);
+            state.currentResidentMemberships = sanitizeCollection(state.currentResidentMemberships).filter(entry => normalizeId(entry.id) !== normalizedResidentId);
+            persistCurrentSession();
+            bumpSessionActivity();
+            updateGlobalState();
+            window.closeModal();
+            window.showToast('Resident deleted successfully');
+        };
+
+        const pendingButtonLabels = {
+            performLogin: 'Processing...',
+            submitResidentPasswordChange: 'Updating...',
+            submitAdminSignup: 'Registering...',
+            captureEstateLocation: 'Capturing...',
+            saveAdminStaff: 'Saving...',
+            confirmPayment: 'Refreshing...',
+            submitVote: 'Submitting...',
+            saveDisbursement: 'Submitting...',
+            approveDisbursementRequest: 'Approving...',
+            rejectDisbursementRequest: 'Rejecting...',
+            savePoll: 'Publishing...',
+            saveCampaign: 'Launching...',
+            processFunding: 'Refreshing...',
+            saveResident: 'Saving...',
+            saveVendor: 'Saving...',
+            updateResidentProfile: 'Saving...',
+            deleteResident: 'Deleting...',
+            openFundCampaignModal: 'Preparing...',
+            selectResidentEstate: 'Opening...',
+            switchResidentEstate: 'Switching...'
+        };
+
+        [
+            'performLogin',
+            'submitResidentPasswordChange',
+            'submitAdminSignup',
+            'captureEstateLocation',
+            'saveAdminStaff',
+            'confirmPayment',
+            'submitVote',
+            'saveDisbursement',
+            'approveDisbursementRequest',
+            'rejectDisbursementRequest',
+            'savePoll',
+            'saveCampaign',
+            'processFunding',
+            'saveResident',
+            'saveVendor',
+            'updateResidentProfile',
+            'deleteResident',
+            'openFundCampaignModal',
+            'selectResidentEstate',
+            'switchResidentEstate'
+        ].forEach(name => {
+            if (typeof window[name] !== 'function') return;
+            const original = window[name];
+            window[name] = async function(...args) {
+                return withPendingButton(
+                    () => original.apply(this, args),
+                    { label: pendingButtonLabels[name] || 'Processing...' }
+                );
+            };
+        });
 
         // Bootstrap Supabase
         initSupabase();
