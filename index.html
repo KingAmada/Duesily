@@ -4302,6 +4302,294 @@
             }, 'Account number copied!', 'Could not copy account number');
         };
 
+        function getTransactionRecord(type, id) {
+            const collection = type === 'expense' ? state.expenses : state.incomes;
+            return collection.find(entry => normalizeId(entry.id) === normalizeId(id)) || null;
+        }
+
+        function buildTransactionReceiptHtml(type, record) {
+            const estateName = getCurrentEstateName();
+            const isExpense = type === 'expense';
+            const vendor = isExpense ? (getVendorById(record.vendorId) || { name: 'Direct Expense / Unknown' }) : null;
+            const resident = !isExpense
+                ? (state.residents.find(entry => normalizeId(entry.id) === normalizeId(record.residentId)) || getCurrentResidentMemberships().find(entry => normalizeId(entry.id) === normalizeId(record.residentId)) || null)
+                : null;
+            const counterpartyLabel = isExpense ? 'Vendor' : 'Resident';
+            const counterpartyValue = isExpense ? vendor.name : (resident?.name || record.title || 'Resident Payment');
+            const amountLabel = isExpense ? 'Amount Disbursed' : 'Amount Received';
+            const receiptTitle = isExpense ? 'Expenditure Receipt' : 'Income Receipt';
+            const receiptNumber = `${isExpense ? 'EXP' : 'INC'}-${normalizeId(record.id).slice(0, 8).toUpperCase() || 'RECEIPT'}`;
+            const status = isExpense ? 'Approved' : toStr(record.status || 'completed') || 'Completed';
+            const extraRows = isExpense ? `
+                <div class="row"><span>Approved By</span><strong>${escapeHtml(record.approver || 'Duesily Approval Desk')}</strong></div>
+                <div class="row"><span>Payout Destination</span><strong>${escapeHtml(record.payoutBankName || 'N/A')}${record.payoutAccountNumber ? ` • ${escapeHtml(record.payoutAccountNumber)}` : ''}${record.payoutAccountName ? ` • ${escapeHtml(record.payoutAccountName)}` : ''}</strong></div>
+            ` : `
+                <div class="row"><span>Payment Status</span><strong>${escapeHtml(status.toUpperCase())}</strong></div>
+                <div class="row"><span>Reference</span><strong>${escapeHtml(normalizeId(record.id) || 'N/A')}</strong></div>
+            `;
+
+            return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(receiptTitle)} - ${escapeHtml(receiptNumber)}</title>
+    <style>
+        :root { color-scheme: light; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 32px;
+            font-family: "Inter", "Segoe UI", sans-serif;
+            background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 42%, #ecfeff 100%);
+            color: #0f172a;
+        }
+        .receipt {
+            max-width: 760px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(148,163,184,0.18);
+            border-radius: 32px;
+            padding: 32px;
+            box-shadow: 0 20px 60px rgba(15,23,42,0.12);
+            backdrop-filter: blur(20px);
+        }
+        .brand {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .logo {
+            width: 56px;
+            height: 56px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #4f46e5, #2563eb);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 800;
+            box-shadow: 0 18px 40px rgba(79,70,229,0.28);
+        }
+        .eyebrow {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: #6366f1;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 34px;
+            line-height: 1.05;
+        }
+        .meta {
+            text-align: right;
+            font-size: 13px;
+            color: #64748b;
+            font-weight: 600;
+        }
+        .amount-card {
+            margin: 24px 0;
+            padding: 24px;
+            border-radius: 28px;
+            background: ${isExpense ? 'linear-gradient(135deg, #fff1f2, #ffe4e6)' : 'linear-gradient(135deg, #ecfdf5, #d1fae5)'};
+            border: 1px solid ${isExpense ? 'rgba(244,63,94,0.15)' : 'rgba(16,185,129,0.15)'};
+        }
+        .amount-card small {
+            display: block;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: ${isExpense ? '#e11d48' : '#059669'};
+            margin-bottom: 10px;
+        }
+        .amount-card strong {
+            font-size: 42px;
+            line-height: 1;
+            color: ${isExpense ? '#be123c' : '#047857'};
+        }
+        .grid {
+            display: grid;
+            gap: 14px;
+        }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 18px;
+            background: #f8fafc;
+            border-radius: 20px;
+            border: 1px solid #e2e8f0;
+        }
+        .row span {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #64748b;
+            font-weight: 800;
+        }
+        .row strong {
+            text-align: right;
+            font-size: 14px;
+            color: #0f172a;
+        }
+        .footer {
+            margin-top: 28px;
+            padding-top: 18px;
+            border-top: 1px dashed #cbd5e1;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.7;
+        }
+    </style>
+</head>
+<body>
+    <article class="receipt">
+        <div class="brand">
+            <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div class="logo">D</div>
+                <div>
+                    <div class="eyebrow">${escapeHtml(receiptTitle)}</div>
+                    <h1>Duesily</h1>
+                    <p style="margin:10px 0 0; color:#475569; font-weight:600;">${escapeHtml(estateName)}</p>
+                </div>
+            </div>
+            <div class="meta">
+                <div>${escapeHtml(receiptNumber)}</div>
+                <div style="margin-top:8px;">${escapeHtml(formatDateTime(record.date || record.createdAt || new Date().toISOString()))}</div>
+            </div>
+        </div>
+
+        <div class="amount-card">
+            <small>${escapeHtml(amountLabel)}</small>
+            <strong>${escapeHtml(`${isExpense ? '-' : '+'}${formatCurrency(record.amount || 0)}`)}</strong>
+        </div>
+
+        <div class="grid">
+            <div class="row"><span>Title</span><strong>${escapeHtml(record.title || (isExpense ? 'Estate Expenditure' : 'Estate Income'))}</strong></div>
+            <div class="row"><span>${escapeHtml(counterpartyLabel)}</span><strong>${escapeHtml(counterpartyValue)}</strong></div>
+            <div class="row"><span>Category</span><strong>${escapeHtml(isExpense ? getExpenseCategoryDisplay(record) : (record.category || 'Income'))}</strong></div>
+            <div class="row"><span>Estate</span><strong>${escapeHtml(estateName)}</strong></div>
+            ${extraRows}
+        </div>
+
+        <div class="footer">
+            This receipt was generated from Duesily. Duesily is a product of Amada Technologies Ltd.
+        </div>
+    </article>
+</body>
+</html>`;
+        }
+
+        function buildTransactionShareText(type, record) {
+            const isExpense = type === 'expense';
+            const vendor = isExpense ? (getVendorById(record.vendorId) || { name: 'Direct Expense / Unknown' }) : null;
+            const resident = !isExpense
+                ? (state.residents.find(entry => normalizeId(entry.id) === normalizeId(record.residentId)) || getCurrentResidentMemberships().find(entry => normalizeId(entry.id) === normalizeId(record.residentId)) || null)
+                : null;
+            return [
+                `Duesily ${isExpense ? 'Expenditure' : 'Income'} Receipt`,
+                `Estate: ${getCurrentEstateName()}`,
+                `Title: ${record.title || (isExpense ? 'Estate Expenditure' : 'Estate Income')}`,
+                `${isExpense ? 'Vendor' : 'Resident'}: ${isExpense ? vendor.name : (resident?.name || record.title || 'Resident Payment')}`,
+                `Amount: ${isExpense ? '-' : '+'}${formatCurrency(record.amount || 0)}`,
+                `Category: ${isExpense ? getExpenseCategoryDisplay(record) : (record.category || 'Income')}`,
+                `Date: ${formatDateTime(record.date || record.createdAt || new Date().toISOString())}`,
+                `Reference: ${normalizeId(record.id)}`
+            ].join('\n');
+        }
+
+        window.downloadTransactionReceipt = function(type, id) {
+            const record = getTransactionRecord(type, id);
+            if (!record) return window.showToast('Receipt record not found');
+            const html = buildTransactionReceiptHtml(type, record);
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `duesily-${type}-receipt-${normalizeId(record.id) || Date.now()}.html`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+            window.showToast('Receipt downloaded');
+        };
+
+        window.shareTransactionReceipt = function(type, id) {
+            const record = getTransactionRecord(type, id);
+            if (!record) return window.showToast('Receipt record not found');
+            const text = buildTransactionShareText(type, record);
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+            window.open(whatsappUrl, '_blank', 'noopener');
+        };
+
+        function getReceiptActionButtons(type, id) {
+            return `
+                <div class="grid grid-cols-2 gap-3 mt-6">
+                    <button onclick="window.downloadTransactionReceipt('${type}', '${id}')" class="py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Download Receipt</button>
+                    <button onclick="window.shareTransactionReceipt('${type}', '${id}')" class="py-4 bg-emerald-50 text-emerald-700 rounded-2xl font-bold border border-emerald-100 active:scale-95 transition-transform">Share via WhatsApp</button>
+                </div>
+            `;
+        }
+
+        window.openIncomeDetails = function(incomeId) {
+            const income = state.incomes.find(entry => normalizeId(entry.id) === normalizeId(incomeId));
+            if (!income) return;
+            const resident = state.residents.find(entry => normalizeId(entry.id) === normalizeId(income.residentId))
+                || getCurrentResidentMemberships().find(entry => normalizeId(entry.id) === normalizeId(income.residentId))
+                || null;
+
+            const content = `
+                <div class="flex justify-between items-start mb-6">
+                    <div class="w-16 h-16 bg-emerald-500 text-white rounded-[1.5rem] flex items-center justify-center shadow-lg">
+                        <i data-lucide="wallet" class="w-8 h-8"></i>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Amount Received</p>
+                        <h2 class="text-2xl font-bold text-emerald-600">+${formatCurrency(income.amount)}</h2>
+                    </div>
+                </div>
+
+                <div class="space-y-4 mb-2">
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Payment Title</span>
+                        <span class="text-sm font-bold text-gray-800">${income.title || 'Estate Income'}</span>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Resident</span>
+                        <span class="text-sm font-bold text-gray-800">${resident?.name || getResidentSafeDisplayName(income.title, income.residentId)}</span>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Category</span>
+                        <span class="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${income.category || 'Income'}</span>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Date of Record</span>
+                        <span class="text-sm font-bold text-gray-800">${formatDate(income.date)}</span>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Status</span>
+                        <span class="text-sm font-bold ${toStr(income.status).toLowerCase() === 'pending' ? 'text-amber-600' : 'text-emerald-600'}">${toStr(income.status || 'completed').toUpperCase()}</span>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Reference</span>
+                        <span class="text-sm font-bold text-gray-800">${normalizeId(income.id)}</span>
+                    </div>
+                </div>
+                ${getReceiptActionButtons('income', income.id)}
+                <button onclick="window.closeModal()" class="w-full mt-3 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
+            `;
+            document.getElementById('modal-content').innerHTML = content;
+            document.getElementById('modal-container').classList.remove('hidden');
+            lucide.createIcons();
+        };
+
         window.openExpenseDetails = function(expenseId) {
             const expense = state.expenses.find(e => e.id === expenseId);
             if(!expense) return;
@@ -4344,7 +4632,8 @@
                         <span class="text-sm font-bold text-gray-800 text-right">${expense.payoutBankName || 'N/A'}${expense.payoutAccountNumber ? ` • ${expense.payoutAccountNumber}` : ''}${expense.payoutAccountName ? ` • ${expense.payoutAccountName}` : ''}</span>
                     </div>
                 </div>
-                <button onclick="window.closeModal()" class="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
+                ${getReceiptActionButtons('expense', expense.id)}
+                <button onclick="window.closeModal()" class="w-full mt-3 py-4 bg-gray-900 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Close Details</button>
             `;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('modal-container').classList.remove('hidden');
@@ -4462,7 +4751,7 @@
                 <h3 class="font-bold text-lg mb-4">Payment Records</h3>
                 <div class="space-y-3 max-h-48 overflow-y-auto hide-scroll pb-4">
                     ${records.length ? records.map(t => `
-                        <div class="flex justify-between items-center p-3 border border-gray-100 rounded-xl">
+                        <div onclick="window.openIncomeDetails('${t.id}')" class="flex justify-between items-center p-3 border border-gray-100 rounded-xl cursor-pointer hover:bg-gray-50 active:scale-[0.98] transition-all">
                             <div>
                                 <p class="text-sm font-bold text-gray-800">${t.category}</p>
                                 <p class="text-[10px] text-gray-400 font-medium">${formatDate(t.date)} • <span class="${t.status === 'pending' ? 'text-amber-500' : 'text-emerald-500'}">${t.status.toUpperCase()}</span></p>
@@ -4534,7 +4823,7 @@
                     </div>
                     <div class="space-y-3 pb-4">
                         ${state.incomes.length > 0 ? state.incomes.slice(0, 4).map(c => `
-                            <div class="white-card p-4 flex items-center justify-between">
+                            <div onclick="window.openIncomeDetails('${c.id}')" class="white-card p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 active:scale-[0.98] transition-all border border-transparent hover:border-gray-100">
                                 <div class="flex items-center gap-4">
                                     <div class="w-10 h-10 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-300"><i data-lucide="user" class="w-5 h-5"></i></div>
                                     <div>
@@ -4693,7 +4982,7 @@
                     </div>
                     <div class="space-y-3 pb-8">
                         ${filtered.length ? filtered.map(e => `
-                            <div ${state.financeType === 'expense' ? `onclick="window.openExpenseDetails('${e.id}')"` : ''} class="white-card p-4 flex items-center justify-between animate-fadeIn ${state.financeType === 'expense' ? 'cursor-pointer hover:bg-gray-50 active:scale-[0.98]' : ''} transition-all border border-transparent hover:border-gray-100">
+                            <div onclick="window.${state.financeType === 'expense' ? 'openExpenseDetails' : 'openIncomeDetails'}('${e.id}')" class="white-card p-4 flex items-center justify-between animate-fadeIn cursor-pointer hover:bg-gray-50 active:scale-[0.98] transition-all border border-transparent hover:border-gray-100">
                                 <div class="flex items-center gap-4">
                                     <div class="w-12 h-12 ${e.color || 'bg-indigo-500'} rounded-2xl flex items-center justify-center text-white shadow-lg">
                                         <i data-lucide="${e.icon || 'circle'}" class="w-6 h-6"></i>
@@ -5052,7 +5341,7 @@
                     </div>
                     <div class="space-y-3 mb-8">
                         ${window.getMyRecords().length > 0 ? window.getMyRecords().slice(0, 3).map(c => `
-                            <div class="white-card p-4 flex items-center justify-between">
+                            <div onclick="window.openIncomeDetails('${c.id}')" class="white-card p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 active:scale-[0.98] transition-all border border-transparent hover:border-gray-100">
                                 <div>
                                     <p class="font-bold text-sm text-gray-800">${c.category}</p>
                                     <p class="text-[10px] text-gray-400 font-medium">${formatDate(c.date)} • <span class="${c.status === 'pending' ? 'text-amber-500' : 'text-emerald-500'}">${c.status.toUpperCase()}</span></p>
@@ -5112,7 +5401,7 @@
 
                     <div class="space-y-3 pb-8">
                         ${records.length ? records.map(c => `
-                            <div class="white-card p-4 flex items-center justify-between animate-fadeIn">
+                            <div onclick="window.openIncomeDetails('${c.id}')" class="white-card p-4 flex items-center justify-between animate-fadeIn cursor-pointer hover:bg-gray-50 active:scale-[0.98] transition-all border border-transparent hover:border-gray-100">
                                 <div>
                                     <p class="font-bold text-sm text-gray-800">${c.category}</p>
                                     <p class="text-[10px] text-gray-400 font-medium">${formatDate(c.date)} • <span class="${c.status === 'pending' ? 'text-amber-500' : 'text-emerald-500'}">${c.status.toUpperCase()}</span></p>
