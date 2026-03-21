@@ -1971,7 +1971,16 @@
         }
 
         // --- UI Formatters & Helpers ---
-        const formatCurrency = (val) => '₦' + Number(val).toLocaleString();
+        const nairaFormatter = new Intl.NumberFormat('en-NG', {
+            style: 'currency',
+            currency: 'NGN',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        });
+        const formatCurrency = (val) => {
+            const amount = Number(val);
+            return nairaFormatter.format(Number.isFinite(amount) ? amount : 0);
+        };
         const formatDate = (dateStr) => {
             if(!dateStr) return '';
             const date = new Date(dateStr);
@@ -2499,6 +2508,12 @@
         window.logout = function({ silent = false, reason = 'manual' } = {}) {
             if (!silent) window.showToast("Logging out securely...");
             clearPersistedSession();
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+            } catch (error) {
+                console.error('Failed to clear browser storage:', error);
+            }
             if (sessionActivityTimeout) {
                 clearTimeout(sessionActivityTimeout);
                 sessionActivityTimeout = null;
@@ -2519,6 +2534,9 @@
                 clearTenantCollections();
                 teardownRealtimeListeners();
                 window.hideAuthModal();
+                if (window.history?.replaceState) {
+                    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+                }
                 window.scrollTo(0,0);
                 if(window.nigeriaMap) window.nigeriaMap.invalidateSize();
                 if (reason === 'expired') {
