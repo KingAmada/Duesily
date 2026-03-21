@@ -4354,25 +4354,29 @@
 
         let receiptLogoDataUrlPromise = null;
 
-        async function getReceiptLogoDataUrl() {
-            if (receiptLogoDataUrlPromise) return receiptLogoDataUrlPromise;
-            receiptLogoDataUrlPromise = fetch('icons/In-app%20Logos.png')
-                .then(response => {
-                    if (!response.ok) throw new Error('Receipt logo asset could not be loaded');
-                    return response.blob();
-                })
-                .then(blob => new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(String(reader.result || ''));
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                }))
-                .catch(error => {
-                    console.error('Failed to load receipt logo asset:', error);
-                    return '';
-                });
-            return receiptLogoDataUrlPromise;
-        }
+        let receiptLogoDataUrlPromise = null;
+
+async function getReceiptLogoDataUrl() {
+    if (receiptLogoDataUrlPromise) return receiptLogoDataUrlPromise;
+
+    receiptLogoDataUrlPromise = fetch('icons/In-app%20Logo.png', { cache: 'no-store' })
+        .then(response => {
+            if (!response.ok) throw new Error('Receipt logo asset could not be loaded');
+            return response.blob();
+        })
+        .then(blob => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result || ''));
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        }))
+        .catch(error => {
+            console.error('Failed to load receipt logo asset:', error);
+            return '';
+        });
+
+    return receiptLogoDataUrlPromise;
+}
 
         function buildTransactionReceiptSvg(type, record, logoDataUrl = '') {
             const estateName = getCurrentEstateName();
