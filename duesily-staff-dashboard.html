@@ -1,0 +1,3358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duesily Staff Platform Overview</title>
+    <meta name="description" content="Functional Duesily staff dashboard for platform overview, estate performance, collections, approvals, support, and operational risk.">
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""
+    >
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <script src="./config.js"></script>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --bg-soft: #f3f8ff;
+            --surface: rgba(255, 255, 255, 0.94);
+            --surface-strong: rgba(255, 255, 255, 0.99);
+            --ink: #1c2740;
+            --muted: #6a7790;
+            --line: rgba(54, 96, 164, 0.10);
+            --line-strong: rgba(54, 96, 164, 0.18);
+            --navy: #0f3d91;
+            --teal: #1886ff;
+            --blue: #3fa0ff;
+            --sky: #dff0ff;
+            --gold: #c58b2a;
+            --coral: #d95d39;
+            --moss: #4c7a43;
+            --shadow: 0 24px 80px rgba(25, 68, 140, 0.10);
+            --radius-xl: 32px;
+            --radius-lg: 24px;
+            --radius-md: 18px;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Instrument Sans", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(24, 134, 255, 0.08), transparent 24%),
+                radial-gradient(circle at right 10%, rgba(15, 61, 145, 0.07), transparent 22%),
+                linear-gradient(180deg, #ffffff 0%, #fafdff 54%, #f2f8ff 100%);
+        }
+
+        body::before,
+        body::after {
+            content: "";
+            position: fixed;
+            inset: auto;
+            width: 26rem;
+            height: 26rem;
+            border-radius: 999px;
+            pointer-events: none;
+            filter: blur(90px);
+            opacity: 0.38;
+            z-index: 0;
+        }
+
+        body::before {
+            top: -9rem;
+            right: -8rem;
+            background: rgba(24, 134, 255, 0.08);
+        }
+
+        body::after {
+            left: -8rem;
+            bottom: -10rem;
+            background: rgba(63, 160, 255, 0.10);
+        }
+
+        .app-shell {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 288px minmax(0, 1fr);
+            gap: 24px;
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .glass {
+            background: var(--surface);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            box-shadow: var(--shadow);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            padding: 22px;
+            border-radius: var(--radius-xl);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-mark {
+            width: 58px;
+            height: 58px;
+            border-radius: 18px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, var(--navy), var(--teal));
+            color: #fff7ef;
+            font-family: "Space Grotesk", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            box-shadow: 0 18px 40px rgba(20, 60, 82, 0.24);
+        }
+
+        .brand h1,
+        .hero-copy h2,
+        .section-head h3,
+        .number-card strong,
+        .signal-card strong,
+        .summary-card strong {
+            font-family: "Space Grotesk", sans-serif;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 1.15rem;
+        }
+
+        .brand p,
+        .section-copy,
+        .small-copy,
+        .subtle {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .nav-block {
+            display: grid;
+            gap: 10px;
+        }
+
+        .nav-label,
+        .eyebrow {
+            margin: 0;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(20, 60, 82, 0.72);
+        }
+
+        .nav-button {
+            width: 100%;
+            border: 0;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.52);
+            color: var(--ink);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            text-align: left;
+            transition: transform 0.2s ease, background 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .nav-button:hover,
+        .nav-button.active {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 16px 28px rgba(20, 60, 82, 0.10);
+        }
+
+        .nav-icon {
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--gold), var(--coral));
+            flex: 0 0 auto;
+            box-shadow: 0 0 0 6px rgba(197, 139, 42, 0.14);
+        }
+
+        .sidebar-note,
+        .summary-card,
+        .panel,
+        .metric-card,
+        .table-card,
+        .timeline-card,
+        .spotlight-card,
+        .hero-panel,
+        .number-card,
+        .signal-card,
+        .board-card,
+        .map-card {
+            border-radius: var(--radius-lg);
+            border: 1px solid transparent;
+            background:
+                linear-gradient(var(--surface-strong), var(--surface-strong)) padding-box,
+                linear-gradient(120deg, rgba(63, 160, 255, 0.18), rgba(15, 61, 145, 0.42), rgba(63, 160, 255, 0.22)) border-box;
+            background-size: 100% 100%, 220% 220%;
+            animation: border-shift 8s linear infinite;
+        }
+
+        .sidebar-note {
+            padding: 18px;
+            background: linear-gradient(180deg, rgba(20, 60, 82, 0.95), rgba(15, 139, 141, 0.92));
+            color: #f6efe4;
+        }
+
+        .sidebar-note strong {
+            display: block;
+            margin-top: 10px;
+            font-family: "Space Grotesk", sans-serif;
+            font-size: 2rem;
+        }
+
+        .sidebar-note p {
+            margin: 8px 0 0;
+            color: rgba(246, 239, 228, 0.78);
+            line-height: 1.55;
+        }
+
+        .quick-links {
+            display: grid;
+            gap: 12px;
+        }
+
+        .quick-link {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.62);
+        }
+
+        .quick-link h4 {
+            margin: 0;
+            font-size: 0.96rem;
+        }
+
+        .quick-link p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+
+        .main {
+            display: grid;
+            gap: 24px;
+        }
+
+        .hero-panel {
+            overflow: hidden;
+            padding: 26px;
+            position: relative;
+        }
+
+        .hero-panel::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 78% 18%, rgba(197, 139, 42, 0.18), transparent 22%),
+                radial-gradient(circle at 86% 84%, rgba(15, 139, 141, 0.16), transparent 18%);
+            pointer-events: none;
+        }
+
+        .hero-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-copy h2 {
+            margin: 10px 0 8px;
+            max-width: 14ch;
+            font-size: clamp(2rem, 4vw, 3.3rem);
+            line-height: 0.96;
+        }
+
+        .hero-copy p {
+            max-width: 60ch;
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .hero-actions,
+        .hero-tags,
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .hero-tags {
+            margin-top: 22px;
+        }
+
+        .tag,
+        .ghost-button,
+        .primary-button,
+        .filter-chip {
+            border-radius: 999px;
+            font: inherit;
+            font-weight: 700;
+        }
+
+        .tag {
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.78);
+        }
+
+        .ghost-button,
+        .primary-button {
+            border: 0;
+            padding: 12px 18px;
+            cursor: pointer;
+        }
+
+        .ghost-button {
+            background: rgba(255, 255, 255, 0.70);
+            color: var(--ink);
+        }
+
+        .primary-button {
+            color: white;
+            background: linear-gradient(135deg, var(--navy), var(--teal), var(--gold));
+            box-shadow: 0 18px 30px rgba(20, 60, 82, 0.18);
+        }
+
+        .hero-grid,
+        .metric-grid,
+        .operations-grid,
+        .table-grid,
+        .board-grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .hero-grid {
+            margin-top: 24px;
+            grid-template-columns: 1.4fr 0.9fr;
+            position: relative;
+            z-index: 1;
+        }
+
+        .summary-card,
+        .signal-card,
+        .number-card,
+        .metric-card,
+        .panel,
+        .table-card,
+        .timeline-card,
+        .spotlight-card,
+        .board-card {
+            padding: 22px;
+        }
+
+        .summary-card strong {
+            display: block;
+            margin-top: 10px;
+            font-size: 2.4rem;
+            line-height: 1;
+        }
+
+        .summary-card p {
+            margin: 10px 0 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .signal-list,
+        .stack,
+        .signal-meters,
+        .timeline-list,
+        .table-list,
+        .queue-list,
+        .support-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .signal-card {
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(245, 250, 255, 0.98)) padding-box,
+                linear-gradient(120deg, rgba(63, 160, 255, 0.20), rgba(15, 61, 145, 0.42), rgba(63, 160, 255, 0.22)) border-box;
+        }
+
+        .signal-row,
+        .table-row,
+        .timeline-item,
+        .support-item,
+        .queue-item {
+            display: grid;
+            gap: 10px;
+            align-items: center;
+            padding: 15px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid rgba(255, 255, 255, 0.72);
+        }
+
+        .signal-row {
+            grid-template-columns: 1fr auto;
+        }
+
+        .meter {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(20, 60, 82, 0.10);
+            overflow: hidden;
+        }
+
+        .meter > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--navy), var(--teal), var(--gold));
+        }
+
+        .metric-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .number-card .label,
+        .metric-card .label {
+            margin: 0;
+            color: rgba(20, 60, 82, 0.72);
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .number-card strong,
+        .metric-card strong {
+            display: block;
+            margin-top: 14px;
+            font-size: 2rem;
+            line-height: 1;
+        }
+
+        .delta {
+            margin-top: 8px;
+            font-size: 0.92rem;
+            font-weight: 700;
+        }
+
+        .good { color: var(--moss); }
+        .watch { color: var(--gold); }
+        .bad { color: var(--coral); }
+
+        .toolbar {
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-chip {
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.58);
+            color: var(--ink);
+            padding: 9px 14px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        .filter-chip:hover,
+        .filter-chip.active {
+            color: white;
+            background: linear-gradient(135deg, var(--navy), var(--teal));
+            transform: translateY(-1px);
+        }
+
+        .overview-top-grid,
+        .analytics-grid,
+        .control-grid,
+        .money-grid,
+        .map-grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .overview-top-grid {
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+
+        .analytics-grid {
+            grid-template-columns: 1.15fr 0.85fr;
+            margin-top: 20px;
+        }
+
+        .control-grid {
+            grid-template-columns: 1.2fr 0.8fr;
+            margin-top: 20px;
+        }
+
+        .money-grid {
+            grid-template-columns: 1fr 1fr;
+            margin-top: 20px;
+        }
+
+        .map-grid {
+            grid-template-columns: 1.05fr 0.95fr;
+            margin-top: 20px;
+        }
+
+        .controls-panel,
+        .queue-summary,
+        .map-card {
+            border-radius: var(--radius-lg);
+            background: var(--surface-strong);
+            border: 1px solid rgba(255, 255, 255, 0.68);
+            padding: 22px;
+        }
+
+        .filter-toolbar {
+            display: grid;
+            grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .search-box,
+        .filter-select {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.76);
+            color: var(--ink);
+            font: inherit;
+            padding: 13px 14px;
+            outline: none;
+        }
+
+        .search-box::placeholder {
+            color: #8a8f99;
+        }
+
+        .chip-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .queue-total {
+            display: grid;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .queue-total .summary-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.68);
+            border: 1px solid rgba(255, 255, 255, 0.74);
+        }
+
+        .queue-total .summary-line strong {
+            font-family: "Space Grotesk", sans-serif;
+            font-size: 1.2rem;
+        }
+
+        .map-shell {
+            position: relative;
+            min-height: 360px;
+            border-radius: 24px;
+            overflow: hidden;
+            background: linear-gradient(180deg, #fffaf3 0%, #f4ebdc 100%);
+            border: 1px solid rgba(124, 93, 51, 0.12);
+        }
+
+        #estateCoverageMap {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+        }
+
+        .map-shell .leaflet-control-attribution {
+            font-size: 0.66rem;
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .estate-marker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(20, 60, 82, 0.12);
+            color: var(--ink);
+            font-size: 0.78rem;
+            font-weight: 700;
+            white-space: nowrap;
+            box-shadow: 0 14px 30px rgba(20, 60, 82, 0.14);
+        }
+
+        .estate-marker strong {
+            font-family: "Space Grotesk", sans-serif;
+            font-size: 0.92rem;
+        }
+
+        .estate-marker-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            box-shadow: 0 0 0 4px rgba(20, 60, 82, 0.08);
+        }
+
+        .map-legend {
+            position: absolute;
+            left: 18px;
+            bottom: 18px;
+            z-index: 2;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            max-width: calc(100% - 190px);
+        }
+
+        .map-key {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.82);
+            border: 1px solid rgba(20, 60, 82, 0.08);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .map-key-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+        }
+
+        .map-note {
+            position: absolute;
+            right: 18px;
+            bottom: 18px;
+            z-index: 2;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.78);
+            color: var(--ink);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .queue-table td strong {
+            font-size: 0.96rem;
+        }
+
+        .queue-link {
+            border: 0;
+            padding: 0;
+            background: transparent;
+            color: var(--ink);
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .queue-link strong {
+            display: block;
+        }
+
+        .table-action-button {
+            border: 0;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font: inherit;
+            font-size: 0.78rem;
+            font-weight: 800;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .table-action-button.view {
+            background: rgba(63, 160, 255, 0.10);
+            color: var(--navy);
+        }
+
+        .table-action-button.pay {
+            background: linear-gradient(135deg, var(--navy), var(--teal));
+            color: #fff;
+        }
+
+        .table-action-stack {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .chart-area {
+            margin-top: 16px;
+            width: 100%;
+            height: 240px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.56), rgba(255,255,255,0.32));
+            padding: 14px;
+        }
+
+        .legend {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .legend span::before {
+            content: "";
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .legend .inflow::before { background: var(--navy); }
+        .legend .approval::before { background: var(--gold); }
+        .legend .tickets::before { background: var(--coral); }
+
+        .score-grid {
+            display: grid;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .score-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255,255,255,0.65);
+            border: 1px solid rgba(255,255,255,0.74);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.86);
+        }
+
+        .operations-grid {
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .table-grid {
+            grid-template-columns: 1.15fr 0.85fr;
+        }
+
+        .table-toolbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .platform-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .platform-table th,
+        .platform-table td {
+            text-align: left;
+            padding: 14px 10px;
+            border-bottom: 1px solid var(--line);
+            vertical-align: top;
+        }
+
+        .platform-table th {
+            font-size: 0.76rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(20, 60, 82, 0.72);
+        }
+
+        .estate-name {
+            font-weight: 700;
+        }
+
+        .mini {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.86rem;
+            color: var(--muted);
+        }
+
+        .timeline-item,
+        .queue-item,
+        .support-item {
+            grid-template-columns: 1fr auto;
+        }
+
+        .time {
+            color: var(--muted);
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .board-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .board-card header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .board-card h4,
+        .table-card h4,
+        .timeline-card h4,
+        .spotlight-card h4,
+        .panel h4,
+        .queue-item h5,
+        .support-item h5 {
+            margin: 0;
+        }
+
+        .board-card p,
+        .table-card p,
+        .timeline-card p,
+        .spotlight-card p,
+        .panel p,
+        .queue-item p,
+        .support-item p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .board-count {
+            min-width: 34px;
+            height: 34px;
+            padding: 0 10px;
+            border-radius: 999px;
+            display: inline-grid;
+            place-items: center;
+            background: rgba(20, 60, 82, 0.08);
+            font-weight: 700;
+        }
+
+        .footer-note {
+            padding: 18px 22px;
+            border-radius: 20px;
+            border: 1px dashed var(--line-strong);
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.42);
+        }
+
+        .detail-modal[hidden] {
+            display: none;
+        }
+
+        .detail-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+        }
+
+        .detail-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.42);
+            backdrop-filter: blur(6px);
+        }
+
+        .detail-modal-panel {
+            position: relative;
+            z-index: 1;
+            width: min(760px, calc(100vw - 32px));
+            margin: 6vh auto 0;
+            padding: 24px;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 28px 90px rgba(15, 23, 42, 0.18);
+        }
+
+        .detail-modal-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .detail-modal-title {
+            margin: 8px 0 0;
+            font-family: "Space Grotesk", sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.8rem);
+            line-height: 1;
+        }
+
+        .detail-modal-subtitle {
+            margin: 10px 0 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .detail-close {
+            border: 0;
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            background: rgba(20, 60, 82, 0.06);
+            color: var(--ink);
+            font: inherit;
+            font-size: 1.3rem;
+            cursor: pointer;
+        }
+
+        .detail-modal-value {
+            margin-top: 22px;
+            padding: 20px 22px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(20, 60, 82, 0.96), rgba(15, 139, 141, 0.92));
+            color: #ffffff;
+        }
+
+        .detail-modal-value span {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.72);
+        }
+
+        .detail-modal-value strong {
+            display: block;
+            margin-top: 10px;
+            font-family: "Space Grotesk", sans-serif;
+            font-size: clamp(2rem, 4vw, 3.4rem);
+            line-height: 1;
+        }
+
+        .detail-modal-meta {
+            margin-top: 10px;
+            color: rgba(255, 255, 255, 0.82);
+            font-weight: 700;
+        }
+
+        .detail-modal-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .detail-modal-list {
+            margin-top: 20px;
+            border-radius: 22px;
+            border: 1px solid rgba(63, 160, 255, 0.16);
+            background: rgba(247, 251, 255, 0.88);
+            overflow: hidden;
+        }
+
+        .detail-list-head,
+        .detail-list-row {
+            display: grid;
+            gap: 12px;
+            align-items: center;
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.8fr);
+        }
+
+        .detail-list-head {
+            padding: 14px 18px;
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid rgba(63, 160, 255, 0.14);
+        }
+
+        .detail-list-head span {
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(15, 61, 145, 0.62);
+        }
+
+        .detail-list-body {
+            max-height: 320px;
+            overflow: auto;
+        }
+
+        .detail-list-row {
+            padding: 15px 18px;
+            border-top: 1px solid rgba(63, 160, 255, 0.10);
+            background: rgba(255, 255, 255, 0.82);
+        }
+
+        .detail-list-row:first-child {
+            border-top: 0;
+        }
+
+        .detail-list-primary {
+            display: grid;
+            gap: 4px;
+        }
+
+        .detail-list-primary strong {
+            font-size: 0.98rem;
+        }
+
+        .detail-list-primary small,
+        .detail-list-cell.muted {
+            color: var(--muted);
+        }
+
+        .detail-list-cell {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .detail-list-empty {
+            padding: 24px 18px;
+            color: var(--muted);
+        }
+
+        .detail-stat {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(20, 60, 82, 0.04);
+            border: 1px solid rgba(20, 60, 82, 0.08);
+        }
+
+        .detail-stat span {
+            display: block;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(20, 60, 82, 0.62);
+        }
+
+        .detail-stat strong {
+            display: block;
+            margin-top: 10px;
+            font-family: "Space Grotesk", sans-serif;
+            font-size: 1.35rem;
+        }
+
+        .detail-modal-notes {
+            margin-top: 20px;
+            padding: 18px;
+            border-radius: 20px;
+            background: rgba(15, 139, 141, 0.05);
+            border: 1px solid rgba(15, 139, 141, 0.10);
+            color: var(--ink);
+        }
+
+        .queue-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .queue-detail-card {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(247, 251, 255, 0.92);
+            border: 1px solid rgba(63, 160, 255, 0.14);
+        }
+
+        .queue-detail-card span {
+            display: block;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(15, 61, 145, 0.62);
+        }
+
+        .queue-detail-card strong {
+            display: block;
+            margin-top: 10px;
+            font-size: 1rem;
+        }
+
+        @keyframes border-shift {
+            0% { background-position: 0 0, 0% 50%; }
+            50% { background-position: 0 0, 100% 50%; }
+            100% { background-position: 0 0, 0% 50%; }
+        }
+
+        .main-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 20px 24px;
+            border-radius: 26px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(63, 160, 255, 0.14);
+            box-shadow: 0 18px 50px rgba(25, 68, 140, 0.10);
+        }
+
+        .main-topbar h2 {
+            margin: 6px 0 0;
+            font-family: "Space Grotesk", sans-serif;
+            font-size: clamp(1.6rem, 2.6vw, 2.35rem);
+            line-height: 1.02;
+        }
+
+        .main-topbar p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .hero-headline {
+            display: grid;
+            gap: 8px;
+        }
+
+        .hero-copy .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(63, 160, 255, 0.08);
+            border: 1px solid rgba(63, 160, 255, 0.14);
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(15, 61, 145, 0.76);
+        }
+
+        .hero-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            position: relative;
+            z-index: 1;
+            margin-top: 22px;
+        }
+
+        .filters-card {
+            margin-top: 0;
+            padding: 20px 22px 18px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.97);
+            border: 1px solid rgba(63, 160, 255, 0.14);
+            position: relative;
+            z-index: 1;
+        }
+
+        .filters-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .filters-header h4 {
+            margin: 8px 0 0;
+            font-size: 1rem;
+        }
+
+        .report-config {
+            display: grid;
+            grid-template-columns: minmax(170px, 1fr) minmax(190px, 1.2fr) fit-content(100px) fit-content(180px);
+            gap: 10px;
+            margin-top: 16px;
+            align-items: stretch;
+        }
+
+        .period-controls {
+            display: contents;
+        }
+
+        .hidden-control {
+            display: none !important;
+        }
+
+        .filters-card .filter-toolbar {
+            grid-template-columns: minmax(180px, 1.15fr) minmax(120px, 0.85fr) minmax(90px, 0.7fr) minmax(90px, 0.62fr) minmax(90px, 0.62fr) minmax(120px, 0.85fr) minmax(110px, 0.8fr);
+            gap: 10px;
+            margin-top: 14px;
+            align-items: stretch;
+        }
+
+        .filters-card .search-box,
+        .filters-card .filter-select {
+            min-height: 44px;
+            height: 44px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: #ffffff;
+            border: 1px solid rgba(63, 160, 255, 0.18);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 8px 20px rgba(63, 160, 255, 0.06);
+            font-size: 0.92rem;
+        }
+
+        .filters-card input[type="date"].filter-select {
+            appearance: none;
+            -webkit-appearance: none;
+            line-height: 1.2;
+        }
+
+        .filters-card .chip-row {
+            margin-top: 16px;
+        }
+
+        .filters-card .chip {
+            background: rgba(63, 160, 255, 0.08);
+            border-color: rgba(63, 160, 255, 0.14);
+        }
+
+        .number-card {
+            position: relative;
+            overflow: hidden;
+            min-height: 152px;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .number-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto auto 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--navy), var(--teal), var(--blue));
+            opacity: 0.9;
+        }
+
+        .number-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+        }
+
+        .number-card:focus-visible {
+            outline: 2px solid rgba(20, 60, 82, 0.32);
+            outline-offset: 3px;
+        }
+
+        .overview-top-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .analytics-grid {
+            grid-template-columns: 1.25fr 0.75fr;
+        }
+
+        .money-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .table-card,
+        .panel,
+        .spotlight-card,
+        .timeline-card,
+        .board-card,
+        .map-card {
+            box-shadow: 0 18px 40px rgba(25, 68, 140, 0.08);
+        }
+
+        .platform-table thead th {
+            position: sticky;
+            top: 0;
+            background: rgba(247, 251, 255, 0.98);
+            z-index: 1;
+        }
+
+        .queue-table tbody tr:hover,
+        .platform-table tbody tr:hover {
+            background: rgba(63, 160, 255, 0.06);
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 24px;
+            align-self: start;
+            max-height: calc(100vh - 48px);
+            overflow: auto;
+        }
+
+        .nav-button {
+            padding: 15px 18px;
+            border: 1px solid rgba(63, 160, 255, 0.10);
+        }
+
+        .nav-button.active {
+            color: var(--navy);
+        }
+
+        .quick-link {
+            box-shadow: 0 12px 28px rgba(63, 41, 10, 0.06);
+        }
+
+        .page-section[hidden] {
+            display: none;
+        }
+
+        .reveal {
+            animation: rise-in 0.45s ease both;
+        }
+
+        @keyframes rise-in {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 1220px) {
+            .app-shell,
+            .hero-layout,
+            .hero-grid,
+            .metric-grid,
+            .overview-top-grid,
+            .analytics-grid,
+            .control-grid,
+            .money-grid,
+            .map-grid,
+            .operations-grid,
+            .table-grid,
+            .board-grid {
+                grid-template-columns: 1fr;
+            }
+
+        }
+
+        @media (max-width: 760px) {
+            .app-shell {
+                padding: 14px;
+                gap: 14px;
+            }
+
+            .sidebar,
+            .hero-panel,
+            .summary-card,
+            .signal-card,
+            .number-card,
+            .metric-card,
+            .panel,
+            .table-card,
+            .timeline-card,
+            .spotlight-card,
+            .board-card {
+                padding: 18px;
+                border-radius: 22px;
+            }
+
+            .hero-copy h2 {
+                max-width: none;
+            }
+
+            .main-topbar,
+            .filters-header {
+                grid-template-columns: 1fr;
+                display: grid;
+            }
+
+            .platform-table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+
+            .filter-toolbar,
+            .filters-card .filter-toolbar,
+            .report-config {
+                grid-template-columns: 1fr;
+            }
+
+            .detail-modal-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .detail-list-head,
+            .detail-list-row {
+                grid-template-columns: 1.2fr 1fr;
+            }
+
+            .detail-list-head span:nth-child(n + 3),
+            .detail-list-row > :nth-child(n + 3) {
+                display: none;
+            }
+
+            .period-controls {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar glass">
+            <div class="brand">
+                <div class="brand-mark">D</div>
+                <div>
+                    <h1>Duesily Staff</h1>
+                    <p>Platform overview console</p>
+                </div>
+            </div>
+
+            <div class="nav-block">
+                <p class="nav-label">Workspace</p>
+                <button class="nav-button active" data-section-target="overview"><span class="nav-icon"></span>Platform Overview</button>
+                <button class="nav-button" data-section-target="operations"><span class="nav-icon"></span>Operations Flow</button>
+            </div>
+
+            <div class="sidebar-note">
+                <p class="eyebrow" style="color: rgba(246,239,228,0.72);">Platform Health</p>
+                <strong id="platformHealthValue">--</strong>
+                <p id="platformHealthNote">Loading platform health from Supabase.</p>
+            </div>
+
+        </aside>
+
+        <main class="main">
+            <section class="main-topbar reveal">
+                <div>
+                    <p class="eyebrow">Workspace overview</p>
+                    <h2>Staff operations command center</h2>
+                    <p>Monitor platform health, generate reports, and move quickly from insight to action.</p>
+                </div>
+            </section>
+
+            <section class="hero-panel glass reveal">
+                <div class="hero-layout">
+                    <article class="filters-card">
+                        <div class="filters-header">
+                            <div>
+                                <p class="eyebrow">Filters and search</p>
+                                <h4>Set filters to create and export the report view</h4>
+                            </div>
+                        </div>
+                        <div class="filter-toolbar">
+                            <input class="search-box" id="dashboardSearch" type="search" placeholder="Search estate, resident, admin, vendor, city, or transaction">
+                            <select class="filter-select" id="amountFilter" aria-label="Amount filter">
+                                <option>Amount</option>
+                                <option>Under ₦100k</option>
+                                <option>₦100k - ₦500k</option>
+                                <option>₦500k - ₦1M</option>
+                                <option>Above ₦1M</option>
+                            </select>
+                            <div class="period-controls">
+                                <select class="filter-select" id="periodFilter" aria-label="Period filter">
+                                    <option value="Daily">Daily</option>
+                                    <option value="Monthly" selected>Monthly</option>
+                                    <option value="Yearly">Yearly</option>
+                                </select>
+                                <input class="filter-select hidden-control" id="specificDateFilter" type="date" aria-label="Specific date filter">
+                                <select class="filter-select" id="monthFilter" aria-label="Month filter">
+                                    <option value="0">January</option>
+                                    <option value="1">February</option>
+                                    <option value="2">March</option>
+                                    <option value="3">April</option>
+                                    <option value="4">May</option>
+                                    <option value="5">June</option>
+                                    <option value="6">July</option>
+                                    <option value="7">August</option>
+                                    <option value="8">September</option>
+                                    <option value="9">October</option>
+                                    <option value="10">November</option>
+                                    <option value="11">December</option>
+                                </select>
+                                <select class="filter-select hidden-control" id="yearFilter" aria-label="Year filter">
+                                    <option>2026</option>
+                                    <option>2025</option>
+                                    <option>2024</option>
+                                    <option>2023</option>
+                                </select>
+                            </div>
+                            <select class="filter-select" id="stateFilter" aria-label="Location filter">
+                                <option>All states</option>
+                                <option>Lagos</option>
+                                <option>FCT</option>
+                                <option>Rivers</option>
+                                <option>Oyo</option>
+                            </select>
+                            <select class="filter-select" id="sortFilter" aria-label="Sort filter">
+                                <option>Highest</option>
+                                <option>Lowest</option>
+                                <option>Newest</option>
+                                <option>Oldest</option>
+                            </select>
+                        </div>
+                        <div class="report-config">
+                            <select class="filter-select" id="reportGrouping" aria-label="Grouping">
+                                <option>Group by estate</option>
+                                <option>Group by state</option>
+                                <option>Group by city</option>
+                                <option>Group by month</option>
+                            </select>
+                            <select class="filter-select" id="reportType" aria-label="Report type">
+                                <option>Collections report</option>
+                                <option>Disbursement report</option>
+                                <option>Estate performance report</option>
+                                <option>Vendors report</option>
+                                <option>Admins report</option>
+                            </select>
+                            <select class="filter-select" id="reportFormat" aria-label="Format">
+                                <option>PDF</option>
+                                <option>CSV</option>
+                                <option>Excel</option>
+                            </select>
+                            <button class="primary-button" id="generateReportButton" type="button">Generate Report</button>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="section-overview" class="page-section reveal">
+                <div class="overview-top-grid">
+                    <article class="number-card">
+                        <p class="label">Total estates</p>
+                        <strong id="kpiEstates">--</strong>
+                        <div class="delta good" id="kpiEstatesDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Total residents</p>
+                        <strong id="kpiResidents">--</strong>
+                        <div class="delta good" id="kpiResidentsDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Total collections</p>
+                        <strong id="kpiCollections">--</strong>
+                        <div class="delta good" id="kpiCollectionsDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Total in bank</p>
+                        <strong id="kpiBank">--</strong>
+                        <div class="delta good" id="kpiBankDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Total spent</p>
+                        <strong id="kpiSpent">--</strong>
+                        <div class="delta watch" id="kpiSpentDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Total admins</p>
+                        <strong id="kpiAdmins">--</strong>
+                        <div class="delta good" id="kpiAdminsDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Total vendors</p>
+                        <strong id="kpiVendors">--</strong>
+                        <div class="delta good" id="kpiVendorsDelta">Loading from Supabase</div>
+                    </article>
+                    <article class="number-card">
+                        <p class="label">Disbursement queue</p>
+                        <strong id="kpiQueue">--</strong>
+                        <div class="delta watch" id="kpiQueueDelta">Loading from Supabase</div>
+                    </article>
+                </div>
+
+                <div class="money-grid">
+                    <article class="table-card">
+                        <div class="table-toolbar">
+                            <div>
+                                <p class="eyebrow">Disbursement queue</p>
+                                <h4 style="margin-top:8px;">Requests awaiting release</h4>
+                            </div>
+                            <span class="badge" id="queueBadge">Loading...</span>
+                        </div>
+                        <table class="platform-table queue-table">
+                            <thead>
+                                <tr>
+                                    <th>Request</th>
+                                    <th>Vendor</th>
+                                    <th>Bank details</th>
+                                    <th>Estate</th>
+                                    <th>Amount</th>
+                                    <th>Age</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueTableBody"></tbody>
+                        </table>
+                    </article>
+                </div>
+
+                <div class="map-grid">
+                    <article class="map-card">
+                        <div class="table-toolbar">
+                            <div>
+                                <p class="eyebrow">Map view</p>
+                                <h4 style="margin-top:8px;">Estate activity coverage</h4>
+                            </div>
+                            <span class="badge" id="mapClusterBadge">Loading map...</span>
+                        </div>
+                        <div class="map-shell" aria-label="Estate coverage map view">
+                            <div id="estateCoverageMap" aria-hidden="true"></div>
+                            <div class="map-legend" aria-hidden="true">
+                                <span class="map-key"><span class="map-key-dot" style="background:var(--navy);"></span>Highest estate density</span>
+                                <span class="map-key"><span class="map-key-dot" style="background:var(--gold);"></span>Queue hotspot</span>
+                            </div>
+                            <div class="map-note" id="mapNote">Highest queue pressure: loading...</div>
+                        </div>
+                    </article>
+
+                    <article class="panel">
+                        <p class="eyebrow">Location summary</p>
+                        <h4 style="margin:8px 0 0;">State and city concentration</h4>
+                        <div class="score-grid" id="locationSummaryList"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="section-operations" class="page-section reveal" hidden>
+                <div class="operations-grid" id="operationsMetrics"></div>
+                <div class="board-grid" id="operationsBoards" style="margin-top:20px;"></div>
+            </section>
+
+            <div class="footer-note reveal">
+                One place to monitor platform health, clear queues, and act on issues across Duesily.
+            </div>
+        </main>
+    </div>
+
+    <div class="detail-modal" id="kpiDetailModal" hidden>
+        <div class="detail-modal-backdrop" id="kpiDetailBackdrop"></div>
+        <div class="detail-modal-panel" role="dialog" aria-modal="true" aria-labelledby="kpiDetailTitle">
+            <div class="detail-modal-header">
+                <div>
+                    <p class="eyebrow">Metric detail</p>
+                    <h3 class="detail-modal-title" id="kpiDetailTitle">Total estates</h3>
+                    <p class="detail-modal-subtitle" id="kpiDetailSubtitle">Detail view of the selected KPI based on the current filter set.</p>
+                </div>
+                <button class="detail-close" id="kpiDetailClose" type="button" aria-label="Close detail view">×</button>
+            </div>
+            <div class="detail-modal-value">
+                <span>Current value</span>
+                <strong id="kpiDetailValue">--</strong>
+                <div class="detail-modal-meta" id="kpiDetailMeta">Loading metric detail</div>
+            </div>
+            <div class="detail-modal-grid" id="kpiDetailGrid"></div>
+            <div class="detail-modal-list" id="kpiDetailList"></div>
+            <div class="detail-modal-notes" id="kpiDetailNotes"></div>
+        </div>
+    </div>
+
+    <div class="detail-modal" id="queueDetailModal" hidden>
+        <div class="detail-modal-backdrop" id="queueDetailBackdrop"></div>
+        <div class="detail-modal-panel" role="dialog" aria-modal="true" aria-labelledby="queueDetailTitle">
+            <div class="detail-modal-header">
+                <div>
+                    <p class="eyebrow">Disbursement detail</p>
+                    <h3 class="detail-modal-title" id="queueDetailTitle">Request detail</h3>
+                    <p class="detail-modal-subtitle" id="queueDetailSubtitle">Operational detail for the selected disbursement request.</p>
+                </div>
+                <button class="detail-close" id="queueDetailClose" type="button" aria-label="Close disbursement detail">×</button>
+            </div>
+            <div class="detail-modal-value">
+                <span>Amount</span>
+                <strong id="queueDetailAmount">₦0</strong>
+                <div class="detail-modal-meta" id="queueDetailMeta">Pending review</div>
+            </div>
+            <div class="queue-detail-grid" id="queueDetailGrid"></div>
+            <div class="detail-modal-notes" id="queueDetailNotes"></div>
+        </div>
+    </div>
+
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""
+    ></script>
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+        const SUPABASE_URL = window.DUESILY_CONFIG?.supabaseUrl || '';
+        const SUPABASE_ANON_KEY = window.DUESILY_CONFIG?.supabaseAnonKey || '';
+        const STAFF_APPROVER_NAME = 'Duesily Staff Ops';
+
+        const navButtons = document.querySelectorAll('.nav-button');
+        const sections = {
+            overview: document.getElementById('section-overview'),
+            operations: document.getElementById('section-operations')
+        };
+
+        const dashboardControls = {
+            search: document.getElementById('dashboardSearch'),
+            amount: document.getElementById('amountFilter'),
+            period: document.getElementById('periodFilter'),
+            specificDate: document.getElementById('specificDateFilter'),
+            month: document.getElementById('monthFilter'),
+            year: document.getElementById('yearFilter'),
+            state: document.getElementById('stateFilter'),
+            sort: document.getElementById('sortFilter')
+        };
+
+        const reportControls = {
+            type: document.getElementById('reportType'),
+            format: document.getElementById('reportFormat'),
+            grouping: document.getElementById('reportGrouping'),
+            generateButton: document.getElementById('generateReportButton')
+        };
+
+        const kpis = {
+            estates: document.getElementById('kpiEstates'),
+            estatesDelta: document.getElementById('kpiEstatesDelta'),
+            residents: document.getElementById('kpiResidents'),
+            residentsDelta: document.getElementById('kpiResidentsDelta'),
+            collections: document.getElementById('kpiCollections'),
+            collectionsDelta: document.getElementById('kpiCollectionsDelta'),
+            bank: document.getElementById('kpiBank'),
+            bankDelta: document.getElementById('kpiBankDelta'),
+            spent: document.getElementById('kpiSpent'),
+            spentDelta: document.getElementById('kpiSpentDelta'),
+            admins: document.getElementById('kpiAdmins'),
+            adminsDelta: document.getElementById('kpiAdminsDelta'),
+            vendors: document.getElementById('kpiVendors'),
+            vendorsDelta: document.getElementById('kpiVendorsDelta'),
+            queue: document.getElementById('kpiQueue'),
+            queueDelta: document.getElementById('kpiQueueDelta')
+        };
+
+        const queueTableBody = document.getElementById('queueTableBody');
+        const queueBadge = document.getElementById('queueBadge');
+        const mapNote = document.getElementById('mapNote');
+        const mapClusterBadge = document.getElementById('mapClusterBadge');
+        const locationSummaryList = document.getElementById('locationSummaryList');
+        const platformHealthValue = document.getElementById('platformHealthValue');
+        const platformHealthNote = document.getElementById('platformHealthNote');
+        const operationsMetrics = document.getElementById('operationsMetrics');
+        const operationsBoards = document.getElementById('operationsBoards');
+        const kpiCards = document.querySelectorAll('.number-card');
+        const kpiDetailModal = document.getElementById('kpiDetailModal');
+        const kpiDetailBackdrop = document.getElementById('kpiDetailBackdrop');
+        const kpiDetailClose = document.getElementById('kpiDetailClose');
+        const kpiDetailTitle = document.getElementById('kpiDetailTitle');
+        const kpiDetailSubtitle = document.getElementById('kpiDetailSubtitle');
+        const kpiDetailValue = document.getElementById('kpiDetailValue');
+        const kpiDetailMeta = document.getElementById('kpiDetailMeta');
+        const kpiDetailGrid = document.getElementById('kpiDetailGrid');
+        const kpiDetailList = document.getElementById('kpiDetailList');
+        const kpiDetailNotes = document.getElementById('kpiDetailNotes');
+        const queueDetailModal = document.getElementById('queueDetailModal');
+        const queueDetailBackdrop = document.getElementById('queueDetailBackdrop');
+        const queueDetailClose = document.getElementById('queueDetailClose');
+        const queueDetailTitle = document.getElementById('queueDetailTitle');
+        const queueDetailSubtitle = document.getElementById('queueDetailSubtitle');
+        const queueDetailAmount = document.getElementById('queueDetailAmount');
+        const queueDetailMeta = document.getElementById('queueDetailMeta');
+        const queueDetailGrid = document.getElementById('queueDetailGrid');
+        const queueDetailNotes = document.getElementById('queueDetailNotes');
+
+        const appState = {
+            supabase: null,
+            loading: true,
+            datasets: {
+                estates: [],
+                incomes: [],
+                expenses: [],
+                vendors: [],
+                residents: [],
+                campaigns: [],
+                approvals: []
+            },
+            derived: null
+        };
+
+        let estateCoverageMap = null;
+        let estateCoverageLayer = null;
+
+        const fallbackCoordsByState = {
+            Lagos: [6.5244, 3.3792],
+            FCT: [9.0765, 7.3986],
+            Rivers: [4.8156, 7.0498],
+            Oyo: [7.3775, 3.9470],
+            Abuja: [9.0765, 7.3986]
+        };
+
+        function normalizeText(value) {
+            return String(value ?? '').trim();
+        }
+
+        function normalizeId(value) {
+            return normalizeText(value).toLowerCase();
+        }
+
+        function toNumber(value) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatInteger(value) {
+            return new Intl.NumberFormat('en-NG').format(Math.round(toNumber(value)));
+        }
+
+        function formatCurrencyShort(value) {
+            const amount = toNumber(value);
+            const abs = Math.abs(amount);
+            if (abs >= 1000000) return `₦${(amount / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+            if (abs >= 1000) return `₦${(amount / 1000).toFixed(0)}k`;
+            return `₦${formatInteger(amount)}`;
+        }
+
+        function formatDateTime(value) {
+            if (!value) return 'N/A';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'N/A';
+            return date.toLocaleString('en-NG', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+        }
+
+        function formatDateShort(value) {
+            if (!value) return 'N/A';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'N/A';
+            return date.toLocaleDateString('en-NG', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+            });
+        }
+
+        function hoursBetween(value) {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 0;
+            return Math.max(0, Math.round((Date.now() - date.getTime()) / (1000 * 60 * 60)));
+        }
+
+        function formatPercent(value) {
+            return `${Math.round(toNumber(value) * 100)}%`;
+        }
+
+        function formatShare(value, total) {
+            if (!total) return '0%';
+            return `${((toNumber(value) / toNumber(total)) * 100).toFixed(1)}%`;
+        }
+
+        function amountMatches(value, bucket) {
+            const amount = toNumber(value);
+            if (!bucket || bucket === 'Amount') return true;
+            if (bucket === 'Under ₦100k') return amount < 100000;
+            if (bucket === '₦100k - ₦500k') return amount >= 100000 && amount <= 500000;
+            if (bucket === '₦500k - ₦1M') return amount > 500000 && amount <= 1000000;
+            if (bucket === 'Above ₦1M') return amount > 1000000;
+            return true;
+        }
+
+        function getStatusTone(status) {
+            const value = normalizeText(status).toLowerCase();
+            if (value === 'approved' || value === 'ready' || value === 'paid') return 'good';
+            if (value === 'rejected' || value === 'exception') return 'bad';
+            return 'watch';
+        }
+
+        function getSortMultiplier(sortMode) {
+            if (sortMode === 'Lowest' || sortMode === 'Oldest') return 1;
+            return -1;
+        }
+
+        function resolveCssVar(name) {
+            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        }
+
+        function parseCoordinates(value) {
+            const parts = normalizeText(value).split(',').map((part) => Number(part.trim()));
+            if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) return null;
+            return parts;
+        }
+
+        function inferStateFromAddress(address = '') {
+            const value = address.toLowerCase();
+            if (value.includes('lagos')) return 'Lagos';
+            if (value.includes('abuja') || value.includes('gwarinpa') || value.includes('fct')) return 'FCT';
+            if (value.includes('port harcourt') || value.includes('rivers')) return 'Rivers';
+            if (value.includes('ibadan') || value.includes('oyo')) return 'Oyo';
+            return 'Other';
+        }
+
+        function inferCityFromAddress(address = '', state = '') {
+            const value = address.toLowerCase();
+            if (value.includes('lekki')) return 'Lekki';
+            if (value.includes('ikeja')) return 'Ikeja';
+            if (value.includes('wuse') || value.includes('abuja') || value.includes('gwarinpa')) return 'Abuja';
+            if (value.includes('port harcourt') || value.includes('gra')) return 'Port Harcourt';
+            if (value.includes('ibadan')) return 'Ibadan';
+            return state === 'Lagos' ? 'Lagos' : state === 'FCT' ? 'Abuja' : state === 'Rivers' ? 'Port Harcourt' : state === 'Oyo' ? 'Ibadan' : 'Unknown';
+        }
+
+        function getAdminStaff(estate) {
+            return Array.isArray(estate?.adminStaff) ? estate.adminStaff : [];
+        }
+
+        function getVendorAccounts(vendor) {
+            return Array.isArray(vendor?.bankAccounts) ? vendor.bankAccounts.filter(Boolean) : [];
+        }
+
+        function getPrimaryVendorAccount(vendor) {
+            return getVendorAccounts(vendor)[0] || {};
+        }
+
+        function getDashboardState() {
+            const raw = {
+                search: normalizeText(dashboardControls.search.value).toLowerCase(),
+                amount: dashboardControls.amount.value,
+                period: dashboardControls.period.value,
+                specificDate: dashboardControls.specificDate.value,
+                month: dashboardControls.month.value,
+                year: dashboardControls.year.value,
+                state: dashboardControls.state.value,
+                sort: dashboardControls.sort.value
+            };
+
+            return {
+                ...raw,
+                periodLabel: formatPeriodLabel(raw)
+            };
+        }
+
+        function formatPeriodLabel(state) {
+            if (state.period === 'Daily') {
+                if (!state.specificDate) return 'Selected day';
+                return formatDateShort(state.specificDate);
+            }
+
+            if (state.period === 'Yearly') {
+                return String(state.year);
+            }
+
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            return `${monthNames[Number(state.month) || 0]} ${state.year}`;
+        }
+
+        function getSelectedRange(uiState) {
+            if (uiState.period === 'Daily' && uiState.specificDate) {
+                const start = new Date(`${uiState.specificDate}T00:00:00`);
+                const end = new Date(`${uiState.specificDate}T23:59:59.999`);
+                return { start, end };
+            }
+
+            if (uiState.period === 'Yearly') {
+                const year = Number(uiState.year);
+                return {
+                    start: new Date(year, 0, 1),
+                    end: new Date(year, 11, 31, 23, 59, 59, 999)
+                };
+            }
+
+            const year = Number(uiState.year);
+            const month = Number(uiState.month);
+            return {
+                start: new Date(year, month, 1),
+                end: new Date(year, month + 1, 0, 23, 59, 59, 999)
+            };
+        }
+
+        function isWithinRange(value, range) {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return false;
+            return date >= range.start && date <= range.end;
+        }
+
+        function groupByEstate(rows) {
+            return rows.reduce((acc, row) => {
+                const key = normalizeId(row?.estateId);
+                if (!key) return acc;
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(row);
+                return acc;
+            }, {});
+        }
+
+        function buildSearchBlob(parts) {
+            return parts
+                .flatMap((part) => Array.isArray(part) ? part : [part])
+                .map((part) => {
+                    if (part && typeof part === 'object') return JSON.stringify(part);
+                    return normalizeText(part);
+                })
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+        }
+
+        function buildEstateRecords(uiState) {
+            const range = getSelectedRange(uiState);
+            const residentsByEstate = groupByEstate(appState.datasets.residents);
+            const vendorsByEstate = groupByEstate(appState.datasets.vendors);
+            const incomesByEstate = groupByEstate(appState.datasets.incomes);
+            const expensesByEstate = groupByEstate(appState.datasets.expenses);
+            const campaignsByEstate = groupByEstate(appState.datasets.campaigns);
+            const approvalsByEstate = groupByEstate(appState.datasets.approvals);
+
+            const estateRecords = appState.datasets.estates.map((estate) => {
+                const estateId = normalizeId(estate.id);
+                const residents = residentsByEstate[estateId] || [];
+                const vendors = vendorsByEstate[estateId] || [];
+                const incomes = incomesByEstate[estateId] || [];
+                const expenses = expensesByEstate[estateId] || [];
+                const campaigns = campaignsByEstate[estateId] || [];
+                const approvals = approvalsByEstate[estateId] || [];
+                const state = inferStateFromAddress(estate.address);
+                const city = inferCityFromAddress(estate.address, state);
+                const coords = parseCoordinates(estate.gpsLocation) || fallbackCoordsByState[state] || null;
+                const adminStaff = getAdminStaff(estate);
+                const periodIncomes = incomes.filter((item) => isWithinRange(item.date || item.createdAt, range));
+                const periodExpenses = expenses.filter((item) => isWithinRange(item.date || item.createdAt, range));
+                const periodCampaigns = campaigns.filter((item) => isWithinRange(item.ends || item.createdAt || item.updatedAt, range) || normalizeText(item.status).toLowerCase() === 'active');
+                const queueItems = approvals.filter((item) => {
+                    const status = normalizeText(item.status).toLowerCase();
+                    return !['approved', 'rejected'].includes(status);
+                });
+                const paidResidents = residents.filter((resident) => normalizeText(resident.paymentStatus).toLowerCase() === 'paid').length;
+                const collectionsTotal = periodIncomes.reduce((sum, row) => sum + toNumber(row.amount), 0);
+                const spentTotal = periodExpenses.reduce((sum, row) => sum + toNumber(row.amount), 0);
+                const bankBalance = collectionsTotal - spentTotal;
+                const vendorAccounts = vendors.reduce((sum, vendor) => sum + (getVendorAccounts(vendor).length ? 1 : 0), 0);
+                const activeCampaigns = periodCampaigns.filter((campaign) => normalizeText(campaign.status).toLowerCase() === 'active');
+                const queueAmount = queueItems.reduce((sum, row) => sum + toNumber(row.amount), 0);
+
+                return {
+                    id: estate.id,
+                    estateName: estate.estateName || 'Unnamed Estate',
+                    address: estate.address || 'Unknown address',
+                    city,
+                    state,
+                    coords,
+                    email: estate.email || '',
+                    phone: estate.phone || '',
+                    adminStaff,
+                    adminCount: adminStaff.length,
+                    walletAccountNumber: estate.walletAccountNumber || '',
+                    residents,
+                    residentCount: residents.length,
+                    paidResidents,
+                    vendors,
+                    vendorCount: vendors.length,
+                    vendorsWithBankAccounts: vendorAccounts,
+                    incomes,
+                    periodIncomes,
+                    collectionsTotal,
+                    expenses,
+                    periodExpenses,
+                    spentTotal,
+                    bankBalance,
+                    campaigns,
+                    activeCampaigns,
+                    activeCampaignCount: activeCampaigns.length,
+                    campaignRaisedTotal: activeCampaigns.reduce((sum, campaign) => sum + toNumber(campaign.raisedAmount), 0),
+                    approvals,
+                    queueItems,
+                    queueAmount,
+                    walletActive: Boolean(estate.walletAccountNumber),
+                    searchBlob: buildSearchBlob([
+                        estate.estateName,
+                        estate.address,
+                        estate.email,
+                        estate.phone,
+                        city,
+                        state,
+                        adminStaff,
+                        residents.map((resident) => [resident.name, resident.email, resident.phone]),
+                        vendors.map((vendor) => [vendor.name, vendor.category, vendor.bankAccounts]),
+                        incomes.map((income) => [income.title, income.category, income.amount]),
+                        expenses.map((expense) => [expense.title, expense.category, expense.amount]),
+                        campaigns.map((campaign) => [campaign.title, campaign.description, campaign.status]),
+                        approvals.map((approval) => [approval.title, approval.category, approval.status, approval.requestedBy])
+                    ])
+                };
+            });
+
+            const filteredEstates = estateRecords.filter((record) => {
+                const matchesState = uiState.state === 'All states' || record.state === uiState.state;
+                const matchesSearch = !uiState.search || record.searchBlob.includes(uiState.search);
+                const matchesAmount = amountMatches(record.collectionsTotal, uiState.amount);
+                return matchesState && matchesSearch && matchesAmount;
+            });
+
+            const estateIds = new Set(filteredEstates.map((record) => normalizeId(record.id)));
+            const vendorById = new Map(appState.datasets.vendors.map((vendor) => [normalizeId(vendor.id), vendor]));
+            const estateById = new Map(filteredEstates.map((record) => [normalizeId(record.id), record]));
+
+            const queueItems = appState.datasets.approvals
+                .filter((item) => estateIds.has(normalizeId(item.estateId)))
+                .filter((item) => {
+                    const status = normalizeText(item.status).toLowerCase();
+                    if (['approved', 'rejected'].includes(status)) return false;
+                    const estateRecord = estateById.get(normalizeId(item.estateId));
+                    const vendor = vendorById.get(normalizeId(item.vendorId));
+                    const account = getPrimaryVendorAccount(vendor);
+                    const searchBlob = buildSearchBlob([
+                        item.title,
+                        item.category,
+                        item.subCategory,
+                        item.status,
+                        item.requestedBy,
+                        item.approver,
+                        estateRecord?.estateName,
+                        estateRecord?.city,
+                        estateRecord?.state,
+                        vendor?.name,
+                        vendor?.category,
+                        account?.bankName,
+                        account?.accountNumber,
+                        account?.accountName
+                    ]);
+                    return (!uiState.search || searchBlob.includes(uiState.search)) && amountMatches(item.amount, uiState.amount);
+                })
+                .map((item) => {
+                    const estateRecord = estateById.get(normalizeId(item.estateId));
+                    const vendor = vendorById.get(normalizeId(item.vendorId));
+                    const account = getPrimaryVendorAccount(vendor);
+                    return {
+                        ...item,
+                        request: item.title || 'Unnamed request',
+                        estate: estateRecord?.estateName || 'Unknown estate',
+                        city: estateRecord?.city || 'Unknown',
+                        state: estateRecord?.state || 'Other',
+                        vendorName: vendor?.name || item.requestedBy || 'Unknown vendor',
+                        bankName: item.payoutBankName || account.bankName || 'Bank not set',
+                        accountNumber: item.payoutAccountNumber || account.accountNumber || 'Account not set',
+                        accountName: item.payoutAccountName || account.accountName || 'Account name not set',
+                        requestedAt: item.createdAt || item.date || '',
+                        ageHours: hoursBetween(item.createdAt || item.date),
+                        tone: getStatusTone(item.status),
+                        createdOrder: new Date(item.createdAt || item.date || 0).getTime()
+                    };
+                })
+                .sort((a, b) => {
+                    if (uiState.sort === 'Lowest' || uiState.sort === 'Highest') {
+                        return (toNumber(b.amount) - toNumber(a.amount)) * getSortMultiplier(uiState.sort);
+                    }
+                    return (a.createdOrder - b.createdOrder) * getSortMultiplier(uiState.sort);
+                });
+
+            const historyItems = appState.datasets.expenses
+                .filter((expense) => estateIds.has(normalizeId(expense.estateId)))
+                .filter((expense) => isWithinRange(expense.date || expense.createdAt, range))
+                .filter((expense) => {
+                    const estateRecord = estateById.get(normalizeId(expense.estateId));
+                    const vendor = vendorById.get(normalizeId(expense.vendorId));
+                    const searchBlob = buildSearchBlob([
+                        expense.title,
+                        expense.category,
+                        expense.subCategory,
+                        expense.approver,
+                        estateRecord?.estateName,
+                        estateRecord?.city,
+                        estateRecord?.state,
+                        vendor?.name
+                    ]);
+                    return (!uiState.search || searchBlob.includes(uiState.search)) && amountMatches(expense.amount, uiState.amount);
+                })
+                .map((expense) => {
+                    const estateRecord = estateById.get(normalizeId(expense.estateId));
+                    const vendor = vendorById.get(normalizeId(expense.vendorId));
+                    return {
+                        ...expense,
+                        estate: estateRecord?.estateName || 'Unknown estate',
+                        city: estateRecord?.city || 'Unknown',
+                        state: estateRecord?.state || 'Other',
+                        vendorName: vendor?.name || 'Direct expense / unknown'
+                    };
+                })
+                .sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+
+            const stateSummaryMap = filteredEstates.reduce((acc, record) => {
+                if (!acc[record.state]) {
+                    acc[record.state] = {
+                        state: record.state,
+                        estates: 0,
+                        residents: 0,
+                        bankBalance: 0,
+                        collections: 0,
+                        queueAmount: 0,
+                        coords: []
+                    };
+                }
+                const bucket = acc[record.state];
+                bucket.estates += 1;
+                bucket.residents += record.residentCount;
+                bucket.bankBalance += record.bankBalance;
+                bucket.collections += record.collectionsTotal;
+                bucket.queueAmount += record.queueAmount;
+                if (record.coords) bucket.coords.push(record.coords);
+                return acc;
+            }, {});
+
+            const stateSummary = Object.values(stateSummaryMap)
+                .map((row) => {
+                    const coords = row.coords.length
+                        ? [
+                            row.coords.reduce((sum, coord) => sum + coord[0], 0) / row.coords.length,
+                            row.coords.reduce((sum, coord) => sum + coord[1], 0) / row.coords.length
+                        ]
+                        : (fallbackCoordsByState[row.state] || [9.0765, 7.3986]);
+                    return {
+                        ...row,
+                        coords,
+                        badgeTone: row.queueAmount > row.collections ? 'bad' : row.queueAmount > 0 ? 'watch' : 'good',
+                        badgeLabel: row.queueAmount > row.collections ? 'Watch' : row.queueAmount > 0 ? 'Active' : 'Clear'
+                    };
+                })
+                .sort((a, b) => b.estates - a.estates || b.collections - a.collections);
+
+            const highestQueueState = stateSummary.length
+                ? stateSummary.slice().sort((a, b) => b.queueAmount - a.queueAmount)[0]?.state || 'No matching records'
+                : 'No matching records';
+
+            const totals = filteredEstates.reduce((acc, record) => {
+                acc.estates += 1;
+                acc.residents += record.residentCount;
+                acc.paidResidents += record.paidResidents;
+                acc.collections += record.collectionsTotal;
+                acc.bank += record.bankBalance;
+                acc.spent += record.spentTotal;
+                acc.admins += record.adminCount;
+                acc.vendors += record.vendorCount;
+                acc.vendorsWithAccounts += record.vendorsWithBankAccounts;
+                acc.walletEstates += record.walletActive ? 1 : 0;
+                acc.activeCampaigns += record.activeCampaignCount;
+                acc.campaignRaised += record.campaignRaisedTotal;
+                return acc;
+            }, {
+                estates: 0,
+                residents: 0,
+                paidResidents: 0,
+                collections: 0,
+                bank: 0,
+                spent: 0,
+                admins: 0,
+                vendors: 0,
+                vendorsWithAccounts: 0,
+                walletEstates: 0,
+                activeCampaigns: 0,
+                campaignRaised: 0
+            });
+
+            const approvedApprovals = appState.datasets.approvals.filter((item) => normalizeText(item.status).toLowerCase() === 'approved').length;
+            const allApprovals = appState.datasets.approvals.length;
+            const paymentCoverage = totals.residents ? totals.paidResidents / totals.residents : 1;
+            const walletCoverage = totals.estates ? totals.walletEstates / totals.estates : 1;
+            const approvalCoverage = allApprovals ? approvedApprovals / allApprovals : 1;
+            const healthScore = Math.round(((paymentCoverage * 0.4) + (walletCoverage * 0.25) + (approvalCoverage * 0.35)) * 1000) / 10;
+
+            return {
+                uiState,
+                range,
+                filteredEstates,
+                queueItems,
+                historyItems,
+                stateSummary,
+                mapClusters: stateSummary,
+                highestQueueState,
+                totals,
+                healthScore
+            };
+        }
+
+        function updatePeriodInputs() {
+            const mode = dashboardControls.period.value;
+            dashboardControls.specificDate.classList.toggle('hidden-control', mode !== 'Daily');
+            dashboardControls.month.classList.toggle('hidden-control', mode !== 'Monthly');
+            dashboardControls.year.classList.toggle('hidden-control', mode === 'Daily');
+        }
+
+        function renderDetailList(payload) {
+            if (!payload.columns || !payload.rows) {
+                kpiDetailList.innerHTML = '';
+                return;
+            }
+            if (!payload.rows.length) {
+                kpiDetailList.innerHTML = '<div class="detail-list-empty">No records match the current filters for this metric.</div>';
+                return;
+            }
+            kpiDetailList.innerHTML = `
+                <div class="detail-list-head">
+                    ${payload.columns.map((column) => `<span>${escapeHtml(column)}</span>`).join('')}
+                </div>
+                <div class="detail-list-body">
+                    ${payload.rows.map((row) => `
+                        <div class="detail-list-row">
+                            <div class="detail-list-primary">
+                                <strong>${escapeHtml(row.primary)}</strong>
+                                <small>${escapeHtml(row.secondary || '')}</small>
+                            </div>
+                            <div class="detail-list-cell">${escapeHtml(row.col2 || '')}</div>
+                            <div class="detail-list-cell">${escapeHtml(row.col3 || '')}</div>
+                            <div class="detail-list-cell muted">${escapeHtml(row.col4 || '')}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderQueue(queueItems) {
+            if (!queueItems.length) {
+                queueTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="padding:20px 10px; color:var(--muted);">No disbursement requests match the current filters.</td>
+                    </tr>
+                `;
+                queueBadge.textContent = '0 pending';
+                return;
+            }
+
+            queueTableBody.innerHTML = queueItems.map((item) => `
+                <tr>
+                    <td>
+                        <button class="queue-link" type="button" data-action="view" data-id="${escapeHtml(item.id)}">
+                            <strong>${escapeHtml(item.request)}</strong>
+                            <span class="mini">${escapeHtml(item.category || 'Uncategorized')}</span>
+                        </button>
+                    </td>
+                    <td><strong>${escapeHtml(item.vendorName)}</strong><span class="mini">${escapeHtml(item.requestedBy || 'Requested by estate')}</span></td>
+                    <td><strong>${escapeHtml(item.bankName)}</strong><span class="mini">${escapeHtml(item.accountNumber)}</span></td>
+                    <td>${escapeHtml(item.estate)}</td>
+                    <td>${formatCurrencyShort(item.amount)}</td>
+                    <td>${item.ageHours} hrs</td>
+                    <td><span class="badge ${item.tone}">${escapeHtml(item.status || 'pending')}</span></td>
+                    <td>
+                        <div class="table-action-stack">
+                            <button class="table-action-button view" type="button" data-action="view" data-id="${escapeHtml(item.id)}">View</button>
+                            <button class="table-action-button pay" type="button" data-action="paid" data-id="${escapeHtml(item.id)}">Approve & post</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            queueBadge.textContent = `${queueItems.length} pending`;
+        }
+
+        function renderKpis(derived) {
+            const paidRate = derived.totals.residents ? (derived.totals.paidResidents / derived.totals.residents) : 0;
+
+            kpis.estates.textContent = formatInteger(derived.totals.estates);
+            kpis.estatesDelta.textContent = `${formatInteger(derived.totals.walletEstates)} wallet-enabled estates`;
+
+            kpis.residents.textContent = formatInteger(derived.totals.residents);
+            kpis.residentsDelta.textContent = `${formatPercent(paidRate)} marked paid`;
+
+            kpis.collections.textContent = formatCurrencyShort(derived.totals.collections);
+            kpis.collectionsDelta.textContent = `${derived.uiState.periodLabel} inflow tracked`;
+
+            kpis.bank.textContent = formatCurrencyShort(derived.totals.bank);
+            kpis.bankDelta.textContent = `${derived.uiState.periodLabel} net balance`;
+
+            kpis.spent.textContent = formatCurrencyShort(derived.totals.spent);
+            kpis.spentDelta.textContent = `${derived.historyItems.length} disbursements in view`;
+
+            kpis.admins.textContent = formatInteger(derived.totals.admins);
+            kpis.adminsDelta.textContent = 'Admin staff linked to active estates';
+
+            kpis.vendors.textContent = formatInteger(derived.totals.vendors);
+            kpis.vendorsDelta.textContent = `${formatInteger(derived.totals.vendorsWithAccounts)} with bank details`;
+
+            const queueAmount = derived.queueItems.reduce((sum, item) => sum + toNumber(item.amount), 0);
+            kpis.queue.textContent = formatCurrencyShort(queueAmount);
+            kpis.queueDelta.textContent = `${derived.queueItems.length} requests awaiting action`;
+        }
+
+        function renderPlatformHealth(derived) {
+            platformHealthValue.textContent = `${derived.healthScore.toFixed(1)}%`;
+            platformHealthNote.textContent = derived.queueItems.length
+                ? `${derived.queueItems.length} disbursement requests still need staff action, with the heaviest pressure in ${derived.highestQueueState}.`
+                : 'Queue is clear, wallet coverage is healthy, and collection visibility is coming directly from Supabase.';
+        }
+
+        function renderLocationSummary(derived) {
+            if (!derived.stateSummary.length) {
+                locationSummaryList.innerHTML = `
+                    <div class="score-row">
+                        <div>
+                            <strong style="font-size:1rem;">No matching records</strong>
+                            <p class="small-copy">Adjust filters to view state-level concentration.</p>
+                        </div>
+                        <span class="badge watch">Empty</span>
+                    </div>
+                `;
+                return;
+            }
+
+            locationSummaryList.innerHTML = derived.stateSummary.slice(0, 4).map((row, index) => `
+                <div class="score-row">
+                    <div>
+                        <strong style="font-size:1rem;">${escapeHtml(row.state)}</strong>
+                        <p class="small-copy">${formatInteger(row.estates)} estates, ${formatInteger(row.residents)} residents, ${formatCurrencyShort(row.bankBalance)} net balance.</p>
+                    </div>
+                    <span class="badge ${index === 0 ? 'good' : row.badgeTone}">${escapeHtml(index === 0 ? 'Highest' : row.badgeLabel)}</span>
+                </div>
+            `).join('');
+        }
+
+        function initEstateCoverageMap() {
+            if (estateCoverageMap || typeof L === 'undefined') return;
+            estateCoverageMap = L.map('estateCoverageMap', {
+                zoomControl: false,
+                scrollWheelZoom: false,
+                dragging: true,
+                tap: false
+            });
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(estateCoverageMap);
+
+            estateCoverageLayer = L.layerGroup().addTo(estateCoverageMap);
+        }
+
+        function renderMap(derived) {
+            initEstateCoverageMap();
+            if (!estateCoverageMap || !estateCoverageLayer) return;
+
+            estateCoverageLayer.clearLayers();
+            const bounds = [];
+            const colors = ['var(--navy)', 'var(--teal)', 'var(--gold)', 'var(--coral)'];
+
+            derived.mapClusters.forEach((cluster, index) => {
+                const color = resolveCssVar(colors[index % colors.length]);
+                const coords = cluster.coords || fallbackCoordsByState[cluster.state];
+                if (!coords) return;
+                const icon = L.divIcon({
+                    className: '',
+                    html: `<div class="estate-marker"><span class="estate-marker-dot" style="background:${color};"></span><span>${escapeHtml(cluster.state)} <strong>${escapeHtml(String(cluster.estates))}</strong></span></div>`,
+                    iconSize: [112, 32],
+                    iconAnchor: [18, 18]
+                });
+                L.marker(coords, { icon })
+                    .addTo(estateCoverageLayer)
+                    .bindPopup(`${escapeHtml(cluster.state)}: ${escapeHtml(String(cluster.estates))} active estates`);
+                bounds.push(coords);
+            });
+
+            mapClusterBadge.textContent = `${derived.mapClusters.length} clusters highlighted`;
+            mapNote.textContent = `Highest queue pressure: ${derived.highestQueueState}`;
+
+            if (bounds.length) {
+                estateCoverageMap.fitBounds(bounds, { padding: [28, 28] });
+            }
+        }
+
+        function renderOperations(derived) {
+            const queueAmount = derived.queueItems.reduce((sum, item) => sum + toNumber(item.amount), 0);
+            const historyAmount = derived.historyItems.reduce((sum, item) => sum + toNumber(item.amount), 0);
+
+            operationsMetrics.innerHTML = `
+                <article class="metric-card">
+                    <p class="label">Disbursement history</p>
+                    <strong>${formatCurrencyShort(historyAmount)}</strong>
+                    <div class="delta good">${derived.historyItems.length} posted expenses in this view</div>
+                </article>
+                <article class="metric-card">
+                    <p class="label">Disbursement queue</p>
+                    <strong>${formatCurrencyShort(queueAmount)}</strong>
+                    <div class="delta watch">${derived.queueItems.length} payouts waiting on review or release</div>
+                </article>
+                <article class="metric-card">
+                    <p class="label">Active campaigns</p>
+                    <strong>${formatInteger(derived.totals.activeCampaigns)}</strong>
+                    <div class="delta good">${formatCurrencyShort(derived.totals.campaignRaised)} raised across current campaigns</div>
+                </article>
+            `;
+
+            operationsBoards.innerHTML = `
+                <article class="board-card">
+                    <header>
+                        <h4>Recent disbursement history</h4>
+                        <span class="board-count">${derived.historyItems.length}</span>
+                    </header>
+                    <div class="queue-list">
+                        ${derived.historyItems.length ? derived.historyItems.slice(0, 5).map((item) => `
+                            <div class="queue-item">
+                                <div>
+                                    <h5>${escapeHtml(item.title || 'Expense')}</h5>
+                                    <p>${escapeHtml(item.estate)} • ${formatCurrencyShort(item.amount)} • paid ${formatDateShort(item.date || item.createdAt)}</p>
+                                </div>
+                                <span class="badge good">Completed</span>
+                            </div>
+                        `).join('') : `
+                            <div class="queue-item">
+                                <div>
+                                    <h5>No completed payouts in this view</h5>
+                                    <p>Approved disbursements that post to expenses will appear here automatically.</p>
+                                </div>
+                                <span class="badge watch">Waiting</span>
+                            </div>
+                        `}
+                    </div>
+                </article>
+                <article class="board-card">
+                    <header>
+                        <h4>Active disbursement queue</h4>
+                        <span class="board-count">${derived.queueItems.length}</span>
+                    </header>
+                    <div class="queue-list">
+                        ${derived.queueItems.length ? derived.queueItems.slice(0, 5).map((item) => `
+                            <div class="queue-item">
+                                <div>
+                                    <h5>${escapeHtml(item.request)}</h5>
+                                    <p>${escapeHtml(item.estate)} • ${formatCurrencyShort(item.amount)} • ${escapeHtml(item.status || 'Pending')}</p>
+                                </div>
+                                <span class="badge ${item.tone}">${escapeHtml(item.status || 'Pending')}</span>
+                            </div>
+                        `).join('') : `
+                            <div class="queue-item">
+                                <div>
+                                    <h5>Queue is clear</h5>
+                                    <p>No disbursement requests are awaiting action for this filter set.</p>
+                                </div>
+                                <span class="badge good">Clear</span>
+                            </div>
+                        `}
+                    </div>
+                </article>
+                <article class="board-card">
+                    <header>
+                        <h4>Campaign watch</h4>
+                        <span class="board-count">${derived.totals.activeCampaigns}</span>
+                    </header>
+                    <div class="queue-list">
+                        ${derived.filteredEstates.flatMap((estate) => estate.activeCampaigns.map((campaign) => ({ campaign, estate }))).slice(0, 5).map(({ campaign, estate }) => `
+                            <div class="queue-item">
+                                <div>
+                                    <h5>${escapeHtml(campaign.title || 'Campaign')}</h5>
+                                    <p>${escapeHtml(estate.estateName)} • ${formatCurrencyShort(campaign.raisedAmount)} of ${formatCurrencyShort(campaign.targetAmount)}</p>
+                                </div>
+                                <span class="badge ${normalizeText(campaign.status).toLowerCase() === 'active' ? 'good' : 'watch'}">${escapeHtml(campaign.status || 'active')}</span>
+                            </div>
+                        `).join('') || `
+                            <div class="queue-item">
+                                <div>
+                                    <h5>No campaign activity in this view</h5>
+                                    <p>Campaign records from Supabase will appear here when available.</p>
+                                </div>
+                                <span class="badge watch">Empty</span>
+                            </div>
+                        `}
+                    </div>
+                </article>
+            `;
+        }
+
+        function renderDashboard() {
+            if (!appState.datasets.estates.length && !appState.loading) {
+                queueTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="padding:20px 10px; color:var(--muted);">No Supabase records are available for the staff dashboard.</td>
+                    </tr>
+                `;
+                return null;
+            }
+
+            const derived = buildEstateRecords(getDashboardState());
+            appState.derived = derived;
+            renderKpis(derived);
+            renderPlatformHealth(derived);
+            renderQueue(derived.queueItems);
+            renderLocationSummary(derived);
+            renderMap(derived);
+            renderOperations(derived);
+            return derived;
+        }
+
+        function getQueueItemById(id) {
+            return appState.derived?.queueItems.find((item) => normalizeId(item.id) === normalizeId(id)) || null;
+        }
+
+        function openQueueDetail(id) {
+            const item = getQueueItemById(id);
+            if (!item) return;
+            queueDetailTitle.textContent = item.request;
+            queueDetailSubtitle.textContent = `${item.category || 'Uncategorized'} for ${item.estate}`;
+            queueDetailAmount.textContent = formatCurrencyShort(item.amount);
+            queueDetailMeta.textContent = `${item.status || 'Pending'} • ${item.ageHours} hrs pending`;
+            queueDetailGrid.innerHTML = [
+                ['Vendor', item.vendorName],
+                ['Bank', item.bankName],
+                ['Account number', item.accountNumber],
+                ['Account name', item.accountName],
+                ['Requested by', item.requestedBy || 'Estate admin'],
+                ['Approver', item.approver || 'Awaiting approval'],
+                ['Requested at', formatDateTime(item.requestedAt)],
+                ['Estate', `${item.estate} • ${item.city}, ${item.state}`]
+            ].map(([label, value]) => `
+                <div class="queue-detail-card">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(value)}</strong>
+                </div>
+            `).join('');
+            queueDetailNotes.textContent = 'Approving this request will create a real expense record in Supabase and move it from the queue into disbursement history.';
+            queueDetailModal.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeQueueDetail() {
+            queueDetailModal.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        async function insertExpenseRecord(expensePayload) {
+            const payloadVariants = [
+                expensePayload,
+                (({ payoutBankName, payoutAccountNumber, payoutAccountName, ...rest }) => rest)(expensePayload),
+                (({ payoutBankName, payoutAccountNumber, payoutAccountName, approver, vendorId, subCategory, category, ...rest }) => rest)(expensePayload)
+            ];
+
+            let lastError = null;
+            for (const payload of payloadVariants) {
+                const response = await appState.supabase
+                    .from('duesily_expenses')
+                    .insert([payload])
+                    .select()
+                    .single();
+                if (!response.error) return response;
+                lastError = response.error;
+            }
+            return { data: null, error: lastError };
+        }
+
+        async function approveAndPostQueueItem(id) {
+            const item = getQueueItemById(id);
+            if (!item) return;
+            const approvalRecord = appState.datasets.approvals.find((row) => normalizeId(row.id) === normalizeId(id));
+            if (!approvalRecord) return;
+
+            const expenseId = globalThis.crypto?.randomUUID?.() || `expense-${Date.now()}`;
+            const expensePayload = {
+                id: expenseId,
+                title: item.request,
+                category: item.category || 'Disbursement',
+                subCategory: approvalRecord.subCategory || null,
+                amount: toNumber(item.amount),
+                date: approvalRecord.date || new Date().toISOString(),
+                estateId: approvalRecord.estateId,
+                vendorId: approvalRecord.vendorId || null,
+                approver: STAFF_APPROVER_NAME,
+                payoutBankName: item.bankName !== 'Bank not set' ? item.bankName : null,
+                payoutAccountNumber: item.accountNumber !== 'Account not set' ? item.accountNumber : null,
+                payoutAccountName: item.accountName !== 'Account name not set' ? item.accountName : null
+            };
+
+            reportControls.generateButton.disabled = true;
+
+            try {
+                const expenseInsert = await insertExpenseRecord(expensePayload);
+                if (expenseInsert.error) {
+                    throw expenseInsert.error;
+                }
+
+                const approvalUpdate = await appState.supabase
+                    .from('duesily_disbursement_approvals')
+                    .update({
+                        status: 'approved',
+                        approver: STAFF_APPROVER_NAME,
+                        approvedAt: new Date().toISOString(),
+                        expenseId: expenseInsert.data.id,
+                        updatedAt: new Date().toISOString()
+                    })
+                    .eq('id', approvalRecord.id)
+                    .select()
+                    .single();
+
+                if (approvalUpdate.error) {
+                    throw approvalUpdate.error;
+                }
+
+                closeQueueDetail();
+                await loadDashboardData();
+            } catch (error) {
+                console.error('Failed to approve queue item:', error);
+                window.alert(error.message || 'Could not approve and post this disbursement.');
+            } finally {
+                reportControls.generateButton.disabled = false;
+            }
+        }
+
+        function getMetricSortedEstates(items, metricKey, sortMode) {
+            const sorted = [...items];
+            if (sortMode === 'Lowest') return sorted.sort((a, b) => toNumber(a[metricKey]) - toNumber(b[metricKey]));
+            return sorted.sort((a, b) => toNumber(b[metricKey]) - toNumber(a[metricKey]));
+        }
+
+        function getKpiDetailPayload(key, derived) {
+            const topState = derived.stateSummary[0]?.state || 'No match';
+            const estatesSorted = getMetricSortedEstates(derived.filteredEstates, 'residentCount', derived.uiState.sort);
+            const collectionsSorted = getMetricSortedEstates(derived.filteredEstates, 'collectionsTotal', derived.uiState.sort);
+            const bankSorted = getMetricSortedEstates(derived.filteredEstates, 'bankBalance', derived.uiState.sort);
+            const spentByEstate = derived.filteredEstates.map((record) => ({
+                ...record,
+                periodSpent: record.spentTotal
+            }));
+            const spentSorted = getMetricSortedEstates(spentByEstate, 'periodSpent', derived.uiState.sort);
+
+            const configs = {
+                estates: {
+                    title: 'Total estates',
+                    subtitle: 'Estate coverage in the current filtered view.',
+                    value: kpis.estates.textContent,
+                    meta: kpis.estatesDelta.textContent,
+                    stats: [
+                        ['Primary state', topState],
+                        ['Records in view', String(derived.filteredEstates.length)],
+                        ['Period', derived.uiState.periodLabel]
+                    ],
+                    notes: 'This metric now reads directly from duesily_estate_signups with live resident, vendor, and transaction joins.',
+                    columns: ['Estate', 'Location', 'Residents', 'Collections'],
+                    rows: estatesSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: record.address,
+                        col2: `${record.city}, ${record.state}`,
+                        col3: formatInteger(record.residentCount),
+                        col4: formatCurrencyShort(record.collectionsTotal)
+                    }))
+                },
+                residents: {
+                    title: 'Total residents',
+                    subtitle: 'Resident count breakdown across the filtered estate set.',
+                    value: kpis.residents.textContent,
+                    meta: kpis.residentsDelta.textContent,
+                    stats: [
+                        ['Filtered estates', String(derived.filteredEstates.length)],
+                        ['Top location', topState],
+                        ['Date scope', derived.uiState.periodLabel]
+                    ],
+                    notes: 'Resident counts come directly from duesily_residents grouped by estateId.',
+                    columns: ['Estate', 'State', 'Residents', 'Paid rate'],
+                    rows: estatesSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: `${record.city}, ${record.state}`,
+                        col2: record.state,
+                        col3: formatInteger(record.residentCount),
+                        col4: record.residentCount ? formatPercent(record.paidResidents / record.residentCount) : '0%'
+                    }))
+                },
+                collections: {
+                    title: 'Total collections',
+                    subtitle: 'Tracked inflow for the current reporting period.',
+                    value: kpis.collections.textContent,
+                    meta: kpis.collectionsDelta.textContent,
+                    stats: [
+                        ['Date scope', derived.uiState.periodLabel],
+                        ['State filter', derived.uiState.state],
+                        ['Amount bucket', derived.uiState.amount]
+                    ],
+                    notes: 'Collections are summed directly from duesily_incomes inside the active period filter.',
+                    columns: ['Estate', 'Period', 'Collections', 'Share'],
+                    rows: collectionsSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: `${record.city}, ${record.state}`,
+                        col2: derived.uiState.periodLabel,
+                        col3: formatCurrencyShort(record.collectionsTotal),
+                        col4: formatShare(record.collectionsTotal, derived.totals.collections)
+                    }))
+                },
+                bank: {
+                    title: 'Total in bank',
+                    subtitle: 'Net visible balance across the current estate set.',
+                    value: kpis.bank.textContent,
+                    meta: kpis.bankDelta.textContent,
+                    stats: [
+                        ['Estate records', String(derived.filteredEstates.length)],
+                        ['Period', derived.uiState.periodLabel],
+                        ['State filter', derived.uiState.state]
+                    ],
+                    notes: 'Net balance is derived from all known inflows minus all known expenses for each estate.',
+                    columns: ['Estate', 'State', 'Net balance', 'Wallet'],
+                    rows: bankSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: `${record.city}, ${record.state}`,
+                        col2: record.state,
+                        col3: formatCurrencyShort(record.bankBalance),
+                        col4: record.walletActive ? 'Linked' : 'Pending'
+                    }))
+                },
+                spent: {
+                    title: 'Total spent',
+                    subtitle: 'Posted expense volume in the active report scope.',
+                    value: kpis.spent.textContent,
+                    meta: kpis.spentDelta.textContent,
+                    stats: [
+                        ['Posted expenses', String(derived.historyItems.length)],
+                        ['State filter', derived.uiState.state],
+                        ['Sort order', derived.uiState.sort]
+                    ],
+                    notes: 'Spent values come from duesily_expenses, not mock approvals.',
+                    columns: ['Estate', 'State', 'Spent', 'Queue'],
+                    rows: spentSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: `${record.city}, ${record.state}`,
+                        col2: record.state,
+                        col3: formatCurrencyShort(record.periodSpent),
+                        col4: record.queueAmount ? formatCurrencyShort(record.queueAmount) : 'No queue'
+                    }))
+                },
+                admins: {
+                    title: 'Total admins',
+                    subtitle: 'Administrative staff linked to the current estate set.',
+                    value: kpis.admins.textContent,
+                    meta: kpis.adminsDelta.textContent,
+                    stats: [
+                        ['Estate records', String(derived.filteredEstates.length)],
+                        ['Date scope', derived.uiState.periodLabel],
+                        ['Top state', topState]
+                    ],
+                    notes: 'Admin totals come from the adminStaff JSON stored in duesily_estate_signups.',
+                    columns: ['Estate', 'State', 'Admins', 'Primary contact'],
+                    rows: estatesSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: `${record.city}, ${record.state}`,
+                        col2: record.state,
+                        col3: formatInteger(record.adminCount),
+                        col4: record.adminStaff[0]?.name || 'No staff'
+                    }))
+                },
+                vendors: {
+                    title: 'Total vendors',
+                    subtitle: 'Vendor footprint and payout-readiness in the filtered view.',
+                    value: kpis.vendors.textContent,
+                    meta: kpis.vendorsDelta.textContent,
+                    stats: [
+                        ['State filter', derived.uiState.state],
+                        ['Filtered estates', String(derived.filteredEstates.length)],
+                        ['Date scope', derived.uiState.periodLabel]
+                    ],
+                    notes: 'Vendor totals come from duesily_vendors, including linked bank account metadata where available.',
+                    columns: ['Estate', 'State', 'Vendors', 'With bank'],
+                    rows: estatesSorted.map((record) => ({
+                        primary: record.estateName,
+                        secondary: `${record.city}, ${record.state}`,
+                        col2: record.state,
+                        col3: formatInteger(record.vendorCount),
+                        col4: formatInteger(record.vendorsWithBankAccounts)
+                    }))
+                },
+                queue: {
+                    title: 'Disbursement queue',
+                    subtitle: 'Pending release exposure across matching requests.',
+                    value: kpis.queue.textContent,
+                    meta: kpis.queueDelta.textContent,
+                    stats: [
+                        ['Requests', String(derived.queueItems.length)],
+                        ['Highest pressure', derived.highestQueueState],
+                        ['Sort order', derived.uiState.sort]
+                    ],
+                    notes: 'Queue detail is drawn directly from duesily_disbursement_approvals records that are not yet approved or rejected.',
+                    columns: ['Request', 'Estate', 'Amount', 'Status'],
+                    rows: derived.queueItems.map((item) => ({
+                        primary: item.request,
+                        secondary: `${item.category || 'Uncategorized'} • ${item.city}, ${item.state}`,
+                        col2: item.estate,
+                        col3: formatCurrencyShort(item.amount),
+                        col4: `${item.status || 'Pending'} • ${item.ageHours} hrs`
+                    }))
+                }
+            };
+
+            return configs[key];
+        }
+
+        function openKpiDetail(key) {
+            if (!appState.derived) return;
+            const payload = getKpiDetailPayload(key, appState.derived);
+            if (!payload) return;
+
+            kpiDetailTitle.textContent = payload.title;
+            kpiDetailSubtitle.textContent = payload.subtitle;
+            kpiDetailValue.textContent = payload.value;
+            kpiDetailMeta.textContent = payload.meta;
+            kpiDetailGrid.innerHTML = payload.stats.map(([label, value]) => `
+                <div class="detail-stat">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(value)}</strong>
+                </div>
+            `).join('');
+            renderDetailList(payload);
+            kpiDetailNotes.textContent = payload.notes;
+            kpiDetailModal.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeKpiDetail() {
+            kpiDetailModal.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function buildGroupedRows(items, grouping, valueGetter) {
+            const keyResolver = (item) => {
+                if (grouping === 'Group by state') return item.state;
+                if (grouping === 'Group by city') return item.city;
+                if (grouping === 'Group by month') return item.periodLabel || 'Current period';
+                return item.estateName || item.estate;
+            };
+
+            const grouped = items.reduce((acc, item) => {
+                const key = keyResolver(item);
+                if (!acc[key]) {
+                    acc[key] = { key, total: 0, estates: new Set(), states: new Set(), cities: new Set(), count: 0 };
+                }
+                const bucket = acc[key];
+                bucket.total += valueGetter(item);
+                bucket.count += 1;
+                if (item.estateName || item.estate) bucket.estates.add(item.estateName || item.estate);
+                if (item.state) bucket.states.add(item.state);
+                if (item.city) bucket.cities.add(item.city);
+                return acc;
+            }, {});
+
+            return Object.values(grouped).sort((a, b) => b.total - a.total);
+        }
+
+        function escapeCsv(value) {
+            return `"${String(value ?? '').replace(/"/g, '""')}"`;
+        }
+
+        function buildCsvSection(title, rows) {
+            if (!rows.length) return `${title}\n"No records"\n`;
+            const headers = Object.keys(rows[0]);
+            return [
+                title,
+                headers.map(escapeCsv).join(','),
+                ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(','))
+            ].join('\n');
+        }
+
+        function triggerBlobDownload(filename, content, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function buildReportHtml(report) {
+            const renderTable = (rows) => rows.length ? `
+                <table>
+                    <thead><tr>${Object.keys(rows[0]).map((key) => `<th>${escapeHtml(key)}</th>`).join('')}</tr></thead>
+                    <tbody>${rows.map((row) => `<tr>${Object.values(row).map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}</tbody>
+                </table>
+            ` : '<p>No records matched the current filters.</p>';
+
+            return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(report.title)}</title>
+<style>
+body{font-family:Arial,sans-serif;padding:32px;color:#172033}
+h1,h2{margin:0 0 12px}
+.meta,.totals{margin:18px 0 24px}
+.totals div{margin:4px 0}
+table{width:100%;border-collapse:collapse;margin:14px 0 28px;font-size:12px}
+th,td{border:1px solid #d7e6ff;padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#eef5ff}
+</style>
+</head>
+<body>
+<h1>${escapeHtml(report.title)}</h1>
+<div class="meta">
+    <div>Grouping: ${escapeHtml(report.grouping)}</div>
+    <div>Period: ${escapeHtml(report.state.periodLabel)}</div>
+    <div>State filter: ${escapeHtml(report.state.state)}</div>
+    <div>Format: ${escapeHtml(report.format)}</div>
+</div>
+<div class="totals">
+    <div>Total estates: ${escapeHtml(formatInteger(report.totals.estates))}</div>
+    <div>Total residents: ${escapeHtml(formatInteger(report.totals.residents))}</div>
+    <div>Total collections: ${escapeHtml(formatCurrencyShort(report.totals.collections))}</div>
+    <div>Total in bank: ${escapeHtml(formatCurrencyShort(report.totals.inBank))}</div>
+    <div>Total spent: ${escapeHtml(formatCurrencyShort(report.totals.spent))}</div>
+    <div>Total admins: ${escapeHtml(formatInteger(report.totals.admins))}</div>
+    <div>Total vendors: ${escapeHtml(formatInteger(report.totals.vendors))}</div>
+    <div>Disbursement queue: ${escapeHtml(formatCurrencyShort(report.totals.queueAmount))} across ${escapeHtml(String(report.totals.queueRequests))} requests</div>
+</div>
+<h2>Grouped summary</h2>
+${renderTable(report.summaryRows)}
+<h2>Filtered estate data</h2>
+${renderTable(report.estateRows)}
+<h2>Filtered queue data</h2>
+${renderTable(report.queueRows)}
+</body>
+</html>`;
+        }
+
+        function getComprehensiveReportData() {
+            const derived = appState.derived;
+            const reportType = reportControls.type.value;
+            const reportFormat = reportControls.format.value;
+            const grouping = reportControls.grouping.value;
+            const queueAmount = derived.queueItems.reduce((sum, item) => sum + toNumber(item.amount), 0);
+
+            const estateRows = derived.filteredEstates.map((record) => ({
+                Estate: record.estateName,
+                City: record.city,
+                State: record.state,
+                Address: record.address,
+                Residents: record.residentCount,
+                PaidResidents: record.paidResidents,
+                Collections: Math.round(record.collectionsTotal),
+                NetBalance: Math.round(record.bankBalance),
+                Spent: Math.round(record.spentTotal),
+                Admins: record.adminCount,
+                Vendors: record.vendorCount,
+                ActiveCampaigns: record.activeCampaignCount
+            }));
+
+            const queueRows = derived.queueItems.map((item) => ({
+                Request: item.request,
+                Category: item.category,
+                Vendor: item.vendorName,
+                Bank: item.bankName,
+                AccountNumber: item.accountNumber,
+                Estate: item.estate,
+                City: item.city,
+                State: item.state,
+                Amount: item.amount,
+                AgeHours: item.ageHours,
+                Status: item.status,
+                RequestedBy: item.requestedBy || '',
+                RequestedAt: item.requestedAt
+            }));
+
+            let groupedRows = [];
+            let fileLabel = 'overview';
+
+            if (reportType === 'Disbursement report') {
+                groupedRows = buildGroupedRows(
+                    derived.queueItems.map((item) => ({ ...item, periodLabel: derived.uiState.periodLabel })),
+                    grouping,
+                    (item) => item.amount
+                ).map((row) => ({
+                    Group: row.key,
+                    Coverage: `${row.estates.size} estates / ${row.cities.size || row.states.size} locations`,
+                    Amount: row.total,
+                    Requests: row.count
+                }));
+                fileLabel = 'disbursement';
+            } else {
+                const metricMap = {
+                    'Collections report': { getter: (record) => record.collectionsTotal, label: 'collections' },
+                    'Estate performance report': { getter: (record) => record.residentCount, label: 'estate-performance' },
+                    'Vendors report': { getter: (record) => record.vendorCount, label: 'vendors' },
+                    'Admins report': { getter: (record) => record.adminCount, label: 'admins' }
+                };
+                const config = metricMap[reportType] || metricMap['Collections report'];
+                groupedRows = buildGroupedRows(
+                    derived.filteredEstates.map((record) => ({ ...record, periodLabel: derived.uiState.periodLabel })),
+                    grouping,
+                    config.getter
+                ).map((row) => ({
+                    Group: row.key,
+                    Coverage: `${row.estates.size} estates / ${row.cities.size || row.states.size} locations`,
+                    Value: row.total,
+                    Share: formatShare(row.total, buildGroupedRows(
+                        derived.filteredEstates.map((record) => ({ ...record, periodLabel: derived.uiState.periodLabel })),
+                        grouping,
+                        config.getter
+                    ).reduce((sum, bucket) => sum + bucket.total, 0))
+                }));
+                fileLabel = config.label;
+            }
+
+            return {
+                title: reportType,
+                format: reportFormat,
+                grouping,
+                state: derived.uiState,
+                totals: {
+                    estates: derived.totals.estates,
+                    residents: derived.totals.residents,
+                    collections: Math.round(derived.totals.collections),
+                    inBank: Math.round(derived.totals.bank),
+                    spent: Math.round(derived.totals.spent),
+                    admins: derived.totals.admins,
+                    vendors: derived.totals.vendors,
+                    queueAmount: Math.round(queueAmount),
+                    queueRequests: derived.queueItems.length
+                },
+                summaryRows: groupedRows,
+                estateRows,
+                queueRows,
+                fileSlug: `${fileLabel}-${grouping.replace(/\s+/g, '-').toLowerCase()}-${derived.uiState.periodLabel.replace(/\s+/g, '-').toLowerCase()}`
+            };
+        }
+
+        function downloadComprehensiveReport(report) {
+            const filenameBase = `duesily-${report.fileSlug}`;
+            if (report.format === 'CSV') {
+                const content = [
+                    buildCsvSection('Summary', report.summaryRows),
+                    '',
+                    buildCsvSection('Filtered Estate Data', report.estateRows),
+                    '',
+                    buildCsvSection('Filtered Queue Data', report.queueRows)
+                ].join('\n');
+                triggerBlobDownload(`${filenameBase}.csv`, content, 'text/csv;charset=utf-8;');
+                return;
+            }
+
+            if (report.format === 'Excel') {
+                triggerBlobDownload(`${filenameBase}.xls`, buildReportHtml(report), 'application/vnd.ms-excel');
+                return;
+            }
+
+            const reportHtml = buildReportHtml(report);
+            const printWindow = window.open('', '_blank', 'width=1200,height=900');
+            if (!printWindow) {
+                triggerBlobDownload(`${filenameBase}.html`, reportHtml, 'text/html;charset=utf-8;');
+                return;
+            }
+
+            printWindow.document.open();
+            printWindow.document.write(reportHtml);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => printWindow.print(), 350);
+        }
+
+        function generateReportDownload() {
+            if (!appState.derived) return;
+            downloadComprehensiveReport(getComprehensiveReportData());
+        }
+
+        async function fetchTable(table, orderColumn) {
+            const response = await appState.supabase
+                .from(table)
+                .select('*')
+                .order(orderColumn, { ascending: false });
+            if (response.error) throw response.error;
+            return response.data || [];
+        }
+
+        function setLoadingState() {
+            queueTableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="padding:20px 10px; color:var(--muted);">Loading live Supabase records...</td>
+                </tr>
+            `;
+        }
+
+        function populateYearOptions() {
+            const currentYear = new Date().getFullYear();
+            dashboardControls.year.innerHTML = Array.from({ length: 5 }, (_, index) => {
+                const year = currentYear - index;
+                return `<option>${year}</option>`;
+            }).join('');
+            dashboardControls.year.value = String(currentYear);
+        }
+
+        function populateStateFilter() {
+            const uniqueStates = [...new Set(appState.datasets.estates.map((estate) => inferStateFromAddress(estate.address)).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b));
+            const currentValue = dashboardControls.state.value;
+            dashboardControls.state.innerHTML = ['All states', ...uniqueStates]
+                .map((value) => `<option ${value === currentValue ? 'selected' : ''}>${escapeHtml(value)}</option>`)
+                .join('');
+        }
+
+        async function loadDashboardData() {
+            appState.loading = true;
+            setLoadingState();
+
+            try {
+                const [estates, incomes, expenses, vendors, residents, campaigns, approvals] = await Promise.all([
+                    fetchTable('duesily_estate_signups', 'createdAt'),
+                    fetchTable('duesily_incomes', 'date'),
+                    fetchTable('duesily_expenses', 'date'),
+                    fetchTable('duesily_vendors', 'id'),
+                    fetchTable('duesily_residents', 'id'),
+                    fetchTable('duesily_campaigns', 'ends'),
+                    fetchTable('duesily_disbursement_approvals', 'createdAt')
+                ]);
+
+                appState.datasets = { estates, incomes, expenses, vendors, residents, campaigns, approvals };
+                populateStateFilter();
+                renderDashboard();
+            } catch (error) {
+                console.error('Failed to load staff dashboard data:', error);
+                queueTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="padding:20px 10px; color:var(--coral);">Could not load Supabase data. ${escapeHtml(error.message || 'Unknown error')}</td>
+                    </tr>
+                `;
+                platformHealthValue.textContent = '0%';
+                platformHealthNote.textContent = 'Live Supabase data could not be loaded for the staff dashboard.';
+            } finally {
+                appState.loading = false;
+            }
+        }
+
+        function setupInteractions() {
+            navButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const target = button.dataset.sectionTarget;
+                    navButtons.forEach((item) => item.classList.toggle('active', item === button));
+                    Object.entries(sections).forEach(([key, section]) => {
+                        section.hidden = key !== target;
+                    });
+                    if (target === 'overview' && estateCoverageMap) {
+                        setTimeout(() => estateCoverageMap.invalidateSize(), 120);
+                    }
+                });
+            });
+
+            [dashboardControls.search, dashboardControls.amount, dashboardControls.period, dashboardControls.specificDate, dashboardControls.month, dashboardControls.year, dashboardControls.state, dashboardControls.sort]
+                .forEach((control) => {
+                    control.addEventListener(control.tagName === 'INPUT' ? 'input' : 'change', () => renderDashboard());
+                });
+
+            dashboardControls.period.addEventListener('change', updatePeriodInputs);
+            reportControls.generateButton.addEventListener('click', generateReportDownload);
+
+            queueTableBody.addEventListener('click', async (event) => {
+                const trigger = event.target.closest('[data-action][data-id]');
+                if (!trigger) return;
+                const { action, id } = trigger.dataset;
+                if (action === 'view') {
+                    openQueueDetail(id);
+                    return;
+                }
+                if (action === 'paid') {
+                    await approveAndPostQueueItem(id);
+                }
+            });
+
+            const kpiKeyMap = ['estates', 'residents', 'collections', 'bank', 'spent', 'admins', 'vendors', 'queue'];
+            kpiCards.forEach((card, index) => {
+                const key = kpiKeyMap[index];
+                card.tabIndex = 0;
+                card.setAttribute('role', 'button');
+                card.setAttribute('aria-label', `Open detail view for ${card.querySelector('.label')?.textContent || 'metric'}`);
+                card.addEventListener('click', () => openKpiDetail(key));
+                card.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openKpiDetail(key);
+                    }
+                });
+            });
+
+            kpiDetailBackdrop.addEventListener('click', closeKpiDetail);
+            kpiDetailClose.addEventListener('click', closeKpiDetail);
+            queueDetailBackdrop.addEventListener('click', closeQueueDetail);
+            queueDetailClose.addEventListener('click', closeQueueDetail);
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && !kpiDetailModal.hidden) closeKpiDetail();
+                if (event.key === 'Escape' && !queueDetailModal.hidden) closeQueueDetail();
+            });
+        }
+
+        async function init() {
+            setupInteractions();
+            populateYearOptions();
+
+            const now = new Date();
+            dashboardControls.month.value = String(now.getMonth());
+            dashboardControls.year.value = String(now.getFullYear());
+            dashboardControls.specificDate.value = now.toISOString().slice(0, 10);
+            updatePeriodInputs();
+
+            if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+                queueTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="padding:20px 10px; color:var(--coral);">Supabase configuration is missing in config.js.</td>
+                    </tr>
+                `;
+                platformHealthValue.textContent = '0%';
+                platformHealthNote.textContent = 'Configure Supabase before using the staff dashboard.';
+                return;
+            }
+
+            appState.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            await loadDashboardData();
+        }
+
+        init();
+    </script>
+</body>
+</html>
